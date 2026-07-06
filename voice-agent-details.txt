@@ -1,0 +1,106 @@
+I want you to plan the implementation of a voice agent building for this Nimbus website. The voice agent should be with various features which are described below. 
+
+
+Web scraping
+Scrape the data [website/github] document it properly [md, txt]
+FAQ
+Products
+Families
+Pricing
+Refund
+T&C
+Monthly v/s annual
+
+With tools and without tools
+I also want to have an option where manually I can say which tools my voice agent should have access to, so that I can manually select all the tools or none of the tools. 
+
+RAG v/s RAGless
+I want one more option on the website which I can use to run the voice agent either with RAG or without RAG. If it is with RAG, it will introduce additional latency, so that should be calculated. If it is without RAG, a context.md file will be passed into the context of the LLM. This context.md file will be one single, big file that will be created as a result of the web scraping or from the GitHub scraping. 
+
+Streaming v/s batch mode
+I want an option to try both streaming mode as well as batch mode, and I want to display the total latency comparison between streaming mode and batch mode. I should be able to select whichever mode I want to select. 
+
+RAG
+Are we going to use RAG or are we going to use just direct context parsing? 
+We have to create a RAG vector database.
+We have to have Python functions for retrieving the top k elements and re-ranking, etc., basically for implementing RAG.
+We need to host this RAG functionality either locally or in Railway.  
+I need an ability to visualize the RAG vectors in a beautiful way so that I can see how the vectors are clustering together. 
+I also want an ability to run a query on top of the RAG, so I need a visualization of the query. I want you to visualize the number of vectors that are closest to this query. On the front end, I also want to be able to set an option for how many top-k queries, how many top-k chunks am I retrieving corresponding to the query. 
+Decided on the embedding model
+I want to mention what is the value of k in top-k
+Implement reranking
+Implement FAISS
+Also calculate the latency and display the latency (in ms)
+
+RAGless
+I also want an option where I won't be using RAG but rather passing one single document that captures the entire data from the website in a clean format, and that document I will be passing directly into the LLM.
+Also calculate the latency and display the latency (in ms)
+
+ASR
+-browser
+-Gemini
+-elevenlabs
+-openai
+Display the ASR output in the format of text in a chatbox
+Also calculate the latency and display the latency (in ms)
+
+LLM reasoning layer
+Openai (lite, heavyweight)
+Gemini
+Anthropic
+System prompt - Give an option for the user to set the system prompt in the frontend. 
+Give the user also the option to set the length of the response as low, medium, and high. 
+We need to have the ability to store conversation history, and the user should be able to select how many of the past conversations are stored verbatim. 
+All the other conversations should be stored in a summarized format, except the past conversations, which are stored verbatim. 
+The LLM layer should have access to certain tools. 
+In the LLM reasoning layer in the system prompt, there should be a proper definition of what kind of questions we are using RAG for and what kind of questions we do not use RAG for. 
+For interrupt driven, appending to the LLM context “[cancelled by the user]” so that LLM context is true to the TTS output 
+Also calculate the latency and display the latency (in ms)
+
+Tools
+Tool for calculating the total pricing of the items in the cart. 
+Tool for adding to the cart 
+Tool for checkout 
+Tool for calculating the pricing in annual format
+Tool to calculate the percentage savings if we were to pay annually up front versus if we were to pay one month at a time.
+Tools for sorting the products in decreasing order or increasing order of pricing 
+Tools for fetching the top k expensive software or products from the website  
+Tool for removing an individual item from the cart. 
+Tool for checking out any one individual item from the cart 
+Tool for completely clearing the cart by removing all items 
+Also calculate the latency and display the latency (in ms)
+
+
+TTS
+Openai
+Gemini
+Elevenlabs
+If we need to create the buffer for the TTS audio to play shows that and also displays how much latency this buffer adds. If the buffer is not there, perhaps there will be latency in the network. That latency might cause the audio to be played in a weird way.  
+Also calculate the latency and display the latency (in ms)
+
+Interrupt driven conversations
+So when a user is talking in the middle of TTS, TTS should immediately stop barging in. 
+
+Endpoint detection
+You should have an ability to manually set the end-point detector to 500 ms, 700 ms, etc., using a slider. 
+
+Latency
+Have a proper latency display which combines the latency from every single stage and shows as a percentage which one is contributing the most, maybe using a bar chart or pie chart. Also show the total latency in milliseconds.
+
+We need a playground where this voice agent can be set up, and we can interact with the voice agent with all the different options available, which we can play with (the selection of the API key, the selection of the endpoint duration, etc.). Apart from this, I also want to implement the finalized voice agent as a chat box in the landing page of the website.  
+
+I want a separate page for interacting with the voice agent in its full setup. 
+
+Public phone number
+Call the number and get info regarding any product on the nimbus website
+Have some auth via phone to add to cart, perform checkout
+
+
+
+
+
+
+
+ 
+

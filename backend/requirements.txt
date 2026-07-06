@@ -1,0 +1,12 @@
+# Phase 0-3: scaffold, scraping, LLM core, RAG (FAISS).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+httpx==0.28.1
+numpy==2.4.4
+faiss-cpu==1.13.0
+tiktoken==0.13.0
+# Optional, only for EMBEDDING_PROFILE=rich (local embeddings + cross-encoder rerank):
+# sentence-transformers
+python-multipart==0.0.20
+imageio-ffmpeg==0.6.0

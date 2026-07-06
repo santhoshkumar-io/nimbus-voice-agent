@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+# Vector index is rebuilt from docs (Phase 3); don't commit the artifacts.
+data/rag/

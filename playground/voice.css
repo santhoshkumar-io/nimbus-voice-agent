@@ -1,0 +1,41 @@
+.voice-grid {
+  display: grid; grid-template-columns: 300px 1fr 260px; gap: 16px;
+  padding: 16px; max-width: 1400px; margin: 0 auto; align-items: start;
+}
+@media (max-width: 1100px) { .voice-grid { grid-template-columns: 1fr; } }
+
+.sep { border: 0; border-top: 1px solid var(--line); margin: 8px 0 16px; }
+
+.stage { display: flex; flex-direction: column; min-height: 74vh; }
+.mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 0 18px; border-bottom: 1px solid var(--line); }
+.mic-btn {
+  width: 88px; height: 88px; border-radius: 50%; border: none; cursor: pointer;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff;
+  display: grid; place-items: center; transition: transform .12s, box-shadow .2s;
+}
+.mic-btn:hover { transform: scale(1.04); }
+.mic-btn.listening { box-shadow: 0 0 0 0 rgba(110,139,255,.6); animation: pulse 1.4s infinite; }
+.mic-btn.recording { background: linear-gradient(135deg, #2ea043, #3fb0c9); }
+.mic-btn.speaking { background: linear-gradient(135deg, #d29922, #e06aa8); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(110,139,255,.5); } 70% { box-shadow: 0 0 0 18px rgba(110,139,255,0); } 100% { box-shadow: 0 0 0 0 rgba(110,139,255,0); } }
+
+.level { width: 200px; height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.level i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--ok), var(--warn), var(--bad)); transition: width .05s; }
+.phase { color: var(--muted); font-size: 13px; min-height: 18px; }
+
+.transcript { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 4px 0; }
+.t-msg { padding: 10px 13px; border-radius: 12px; max-width: 86%; white-space: pre-wrap; }
+.t-user { align-self: flex-end; background: var(--brand); color: #fff; }
+.t-assistant { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); }
+.t-assistant.cancelled { opacity: .7; }
+.t-assistant.cancelled::after { content: " [cancelled by the user]"; color: var(--warn); font-style: italic; }
+.t-meta { align-self: center; color: var(--muted); font-size: 11px; }
+
+.latency canvas { display: block; margin: 0 auto; }
+.lat-total { text-align: center; margin: 8px 0; }
+.lat-total span { font-size: 30px; font-weight: 700; }
+.lat-total small { display: block; color: var(--muted); }
+.pie-legend { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.pie-legend .pl { display: flex; align-items: center; gap: 7px; }
+.pie-legend .dot { width: 10px; height: 10px; border-radius: 2px; }
+.pie-legend .pl span:last-child { margin-left: auto; color: var(--muted); }

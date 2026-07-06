@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nimbus · The cloud suite to run your whole business</title>
+  <meta name="description" content="Nimbus is a fictitious all-in-one business software suite built for the Voice Agents bootcamp." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="apple-touch-icon" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <main id="app"></main>
+  <script type="module">
+    import { bootstrap } from "./assets/app.js";
+    import { renderHome } from "./assets/render.js";
+    bootstrap("", renderHome);
+  </script>
+  <!-- Talk to Nimbus: the finalized agent. Swap the URL when the backend moves. -->
+  <script>window.NIMBUS_API_BASE = "https://nimbus-api-production-0295.up.railway.app";</script>
+  <!-- Seed a working default stack for local testing (Gemini + full context + ElevenLabs),
+       so the chat box works out of the box. Only applied if the user hasn't saved settings yet. -->
+  <script>
+    (function () {
+      var CK = "nimbus_agent_config";
+      var cur = null; try { cur = JSON.parse(localStorage.getItem(CK) || "null"); } catch (e) {}
+      if (!cur) {
+        localStorage.setItem(CK, JSON.stringify({
+          model_key: "gemini-flash", response_length: "medium", temperature: 0.5,
+          knowledge: "ragless", tools_enabled: true,
+          asr: "elevenlabs", asr_language: "en", tts: "elevenlabs", voice: "Sarah",
+          endpoint: 700, buffer: 120, barge: "medium", verbatim_turns: 6
+        }));
+        return;
+      }
+      var changed = false;
+      // One-time: upgrade the previous sluggish default so interruptions are snappy.
+      if (!localStorage.getItem("nimbus_barge_migrated")) {
+        if (cur.barge == null || cur.barge === "low") { cur.barge = "medium"; changed = true; }
+        localStorage.setItem("nimbus_barge_migrated", "1");
+      }
+      // One-time (v2): force tools ON and clear any stale tool subset, so the
+      // agent can always add to cart / checkout. Runs once even if an older
+      // migration flag was set while tools happened to be off.
+      if (!localStorage.getItem("nimbus_tools_migrated_v2")) {
+        if (cur.tools_enabled !== true) { cur.tools_enabled = true; changed = true; }
+        if (cur.enabled_tools != null) { cur.enabled_tools = null; changed = true; } // null = all tools
+        localStorage.setItem("nimbus_tools_migrated_v2", "1");
+      }
+      if (changed) localStorage.setItem(CK, JSON.stringify(cur));
+    })();
+  </script>
+  <script src="assets/widget.js?v=8"></script>
+</body>
+</html>

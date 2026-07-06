@@ -1,0 +1,25 @@
+# Secrets — NEVER commit
+.env
+.env.local
+.env.*
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node / Vercel
+node_modules/
+.vercel/
+
+# OS / editor
+.DS_Store
+*.log
+*.swp
+
+# Backend vector index (rebuildable from data/docs)
+backend/data/rag/

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nimbus RAG - Vector visualization</title>
+  <link rel="icon" href="../nimbus-voice-agent-starter/assets/favicon.svg" />
+  <link rel="stylesheet" href="playground.css" />
+  <script src="runtime-config.js"></script>
+  <link rel="stylesheet" href="rag.css" />
+</head>
+<body>
+  <header class="pg-top">
+    <div class="brand">Nimbus <span>RAG vectors</span></div>
+    <div class="top-right">
+      <span id="ragInfo" class="pill pill-muted">loading...</span>
+      <a class="btn btn-ghost" href="playground.html">&#8592; Playground</a>
+    </div>
+  </header>
+
+  <main class="rag-grid">
+    <section class="panel">
+      <div class="rag-querybar">
+        <input id="q" type="text" placeholder="Ask something, e.g. 'how do refunds work?'" />
+        <label class="inline">k <input id="topk" type="number" min="1" max="12" value="4" /></label>
+        <label class="inline"><input id="rerank" type="checkbox" /> rerank</label>
+        <button id="run" class="btn btn-primary">Run query</button>
+      </div>
+      <canvas id="plot"></canvas>
+      <div id="legend" class="legend"></div>
+    </section>
+
+    <aside class="panel rag-side">
+      <h2>Retrieved chunks</h2>
+      <div id="latency" class="rag-lat"></div>
+      <div id="results" class="rag-results"><em>Run a query to retrieve and highlight the nearest chunks.</em></div>
+      <h3>Index</h3>
+      <div id="buildBox">
+        <button id="buildBtn" class="btn btn-ghost btn-block">Rebuild index</button>
+        <p class="hint" id="buildHint"></p>
+      </div>
+      <h3>Hovered chunk</h3>
+      <div id="hover" class="rag-hover"><em>Hover any point on the plot to read its chunk.</em></div>
+    </aside>
+  </main>
+
+  <script type="module" src="rag.js"></script>
+</body>
+</html>

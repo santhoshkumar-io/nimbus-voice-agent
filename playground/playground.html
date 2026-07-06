@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nimbus Voice Agent - Playground</title>
+  <link rel="icon" href="../nimbus-voice-agent-starter/assets/favicon.svg" />
+  <link rel="stylesheet" href="playground.css" />
+  <script src="runtime-config.js"></script>
+</head>
+<body>
+  <header class="pg-top">
+    <div class="brand">Nimbus <span>Playground</span></div>
+    <div class="top-right">
+      <span id="health" class="pill pill-muted">backend: checking...</span>
+      <a class="btn btn-ghost" href="../index.html">&#8592; Home</a>
+      <a class="btn btn-ghost" href="voice.html">&#127908; Voice agent</a>
+      <button id="settingsBtn" class="btn btn-ghost">API keys</button>
+    </div>
+  </header>
+
+  <main class="pg-grid">
+    <!-- Controls -->
+    <aside class="panel controls">
+      <h2>Configuration</h2>
+
+      <label class="field">
+        <span>Model</span>
+        <select id="model"></select>
+      </label>
+
+      <label class="field">
+        <span>Mode</span>
+        <div class="seg" id="mode">
+          <button data-v="batch" class="active">Batch</button>
+          <button data-v="stream">Streaming</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span>Response length</span>
+        <div class="seg" id="length">
+          <button data-v="low">Low</button>
+          <button data-v="medium" class="active">Medium</button>
+          <button data-v="high">High</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span>Knowledge source</span>
+        <div class="seg" id="knowledge">
+          <button data-v="ragless">RAGless</button>
+          <button data-v="rag" class="active">RAG</button>
+          <button data-v="none">None</button>
+        </div>
+      </label>
+      <p class="hint" id="ctxHint">RAG: top-k retrieved chunks are injected (smaller prompt, retrieval latency).</p>
+
+      <div id="ragOpts" hidden>
+        <label class="field">
+          <span>Top-k chunks: <b id="kVal">4</b></span>
+          <input type="range" id="topk" min="1" max="12" value="4" />
+        </label>
+        <div class="field toggle-row">
+          <span>Rerank <small class="hint" id="rrLabel"></small></span>
+          <label class="switch"><input type="checkbox" id="rerank" /><span class="slider"></span></label>
+        </div>
+        <p class="hint" id="ragStatus">embedding index: checking...</p>
+      </div>
+
+      <button id="inspectBtn" class="btn btn-ghost btn-block">View full context + tokens</button>
+      <a class="btn btn-ghost btn-block" href="rag.html" target="_blank" rel="noopener">Open vector visualization &#8599;</a>
+
+      <label class="field">
+        <span>Verbatim history: <b id="vbVal">6</b> messages</span>
+        <input type="range" id="verbatim" min="0" max="20" value="6" />
+        <small class="hint">Older messages are summarized automatically.</small>
+      </label>
+
+      <label class="field">
+        <span>Temperature: <b id="tempVal">0.5</b></span>
+        <input type="range" id="temp" min="0" max="20" value="5" />
+      </label>
+
+      <label class="field">
+        <span>System prompt</span>
+        <textarea id="sysPrompt" rows="5" placeholder="Leave blank for the default Nimbus agent prompt."></textarea>
+      </label>
+
+      <div class="field toggle-row">
+        <span>Tools</span>
+        <label class="switch"><input type="checkbox" id="toolsEnabled" checked /><span class="slider"></span></label>
+      </div>
+      <div id="toolsBox" class="tools-box">
+        <div class="tools-actions">
+          <button id="toolAll" class="btn btn-ghost mini">All</button>
+          <button id="toolNone" class="btn btn-ghost mini">None</button>
+        </div>
+        <div id="toolList" class="tool-list"></div>
+      </div>
+
+      <button id="resetBtn" class="btn btn-ghost btn-block">Reset conversation</button>
+    </aside>
+
+    <!-- Chat -->
+    <section class="panel chat">
+      <div id="messages" class="messages">
+        <div class="msg msg-system">Ask about Nimbus products, pricing, refunds, or families. Set your API keys first.</div>
+      </div>
+      <form id="composer" class="composer">
+        <input id="input" type="text" autocomplete="off" placeholder="Type a message..." />
+        <button class="btn btn-primary" type="submit">Send</button>
+      </form>
+    </section>
+
+    <!-- Latency -->
+    <aside class="panel latency">
+      <h2>Latency</h2>
+      <div class="lat-total"><span id="latTotal">0</span><small>ms total</small></div>
+      <div id="latBars" class="lat-bars"></div>
+      <h3>Streaming vs batch</h3>
+      <table class="cmp">
+        <thead><tr><th></th><th>TTFT</th><th>Total</th></tr></thead>
+        <tbody>
+          <tr><td>Batch</td><td id="bTtft">-</td><td id="bTotal">-</td></tr>
+          <tr><td>Stream</td><td id="sTtft">-</td><td id="sTotal">-</td></tr>
+        </tbody>
+      </table>
+      <button id="compareBtn" class="btn btn-ghost btn-block">Compare both on next message</button>
+
+      <h3>Cart</h3>
+      <div id="cart" class="cart-view"><em>empty</em></div>
+      <h3>Tool calls (last turn)</h3>
+      <div id="toolTrace" class="tool-trace"><em>none</em></div>
+      <div id="meta" class="meta"></div>
+    </aside>
+  </main>
+
+  <!-- Settings dialog -->
+  <dialog id="settings" class="settings">
+    <form method="dialog">
+      <h2>API keys</h2>
+      <p class="hint">Stored only in this browser's localStorage and sent per request. Never committed.</p>
+      <label class="field"><span>OpenAI API key</span><input id="k_openai" type="password" placeholder="sk-..." /></label>
+      <label class="field"><span>Gemini API key</span><input id="k_gemini" type="password" placeholder="AIza..." /></label>
+      <label class="field"><span>ElevenLabs API key</span><input id="k_elevenlabs" type="password" placeholder="(used in Phase 4)" /></label>
+      <label class="field"><span>Backend URL</span><input id="apiBase" type="text" placeholder="http://localhost:8100" /></label>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn btn-ghost">Close</button>
+        <button id="saveKeys" value="save" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Context inspector -->
+  <dialog id="ctxDialog" class="settings ctx-dialog">
+    <div class="ctx-head">
+      <h2>Context sent to the LLM</h2>
+      <div id="ctxTotals" class="ctx-totals"></div>
+      <button id="ctxClose" class="btn btn-ghost mini">Close</button>
+    </div>
+    <div id="ctxBody" class="ctx-body"></div>
+  </dialog>
+
+  <script type="module" src="playground.js"></script>
+</body>
+</html>
