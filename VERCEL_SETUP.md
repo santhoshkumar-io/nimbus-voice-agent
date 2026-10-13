@@ -47,7 +47,73 @@ all** — and it fails silently, looking like a successful deploy. Always build 
 The script fails loudly if `dist/playground` is still a link or if any entry point
 (including the recovered `s2s.js`) is missing.
 
+## Two routes
+
+**Route A — Git integration (dashboard).** Auto-deploys on every push. Use the settings
+below; they are not the defaults Vercel suggests.
+
+**Route B — CLI** (further down). One-off, no repo wiring.
+
+---
+
+## Route A — importing the repo in the dashboard
+
+Vercel's import screen guesses wrong on three fields for this repo. Set them explicitly:
+
+| Field | Vercel suggests | Use |
+|---|---|---|
+| **Root Directory** | `backend` (it detects FastAPI) | **the repository root** — not `backend`, not `playground`, not `nimbus-voice-agent-starter` |
+| **Framework Preset** | `FastAPI` | **Other** |
+| Build Command | (none) | left to `vercel.json` |
+
+**Root Directory must be the repo root.** The site lives in
+`nimbus-voice-agent-starter/`, but it reaches the playground through a symlink
+(`nimbus-voice-agent-starter/playground -> ../playground`) that points *outside* that
+folder. Vercel will not follow a symlink that escapes the root directory, so selecting
+`nimbus-voice-agent-starter` publishes the site with a broken playground, and selecting
+`playground` publishes the playground with no site, no `assets/` and no
+`data/catalog.json`.
+
+From the repo root, `vercel.json` takes over and does the right thing:
+
+```json
+{
+  "buildCommand": "bash ./build-frontend.sh",
+  "outputDirectory": "dist",
+  "framework": null,
+  "installCommand": "echo 'no dependencies to install'"
+}
+```
+
+`build-frontend.sh` copies with `-L`, which turns the symlink into real files, and then
+asserts the result — so a broken deploy fails the build instead of shipping silently.
+This works on Vercel because git stores the symlink properly (mode `120000`), so the
+checkout recreates it. Verified locally by running the build exactly as Vercel does.
+
+### Changing the branch
+
+The import screen has **no branch selector** — Vercel always imports the repository's
+**default branch**, which on your fork is `main`.
+
+`main` is still the original commit `b197ce9`: it has the **retired Gemini model ids**
+(`gemini-2.5-flash` → HTTP 404) and none of the fixes. Deploying it gets you a frontend
+pointing at the *original* backend too, since the corrected
+`playground/runtime-config.js` only exists on the branch.
+
+Two ways to fix, after the project exists:
+
+1. **Merge the branch into `main` on your fork** (recommended). It is your repo, both
+   Vercel and Railway already track `main`, and you get auto-deploys with nothing
+   pinned. On GitHub: open a PR from `recover/prod-source-and-runbook` into `main` and
+   merge it.
+2. **Or repoint Vercel:** Project → **Settings → Git → Production Branch** →
+   `recover/prod-source-and-runbook` → Save, then redeploy. Note Railway is configured
+   this way already, so you would have the branch pinned in two places.
+
+---
+
 ## Your token
+
 
 Already present in the gitignored `.env` as `VERCEL_TOKEN`. It was originally spelled
 `VERECEL_TOKEN`, which no tooling reads — the same class of bug as `ELEVEN_LABS`. If
@@ -57,7 +123,7 @@ you need a new one: https://vercel.com/account/tokens
 export VERCEL_TOKEN=$(grep '^VERCEL_TOKEN=' .env | cut -d= -f2- | tr -d '"'"'"')
 ```
 
-## Deploy
+## Route B — deploying from the CLI
 
 ```bash
 cd /Users/santhosh.kumar/Documents/Voice-agent/nimbus-voice-agent
