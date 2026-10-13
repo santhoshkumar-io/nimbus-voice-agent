@@ -1,0 +1,1 @@
+{"status":"ok","phase":1,"keys_env":{"openai":true,"gemini":true,"elevenlabs":true,"deepgram":false,"cartesia":false},"embedding_profile":"gemini","corpus":{"context_md_ready":true,"doc_count":31}}

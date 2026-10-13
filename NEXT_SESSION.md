@@ -5,6 +5,20 @@ model with tools**, **(3) public phone number people can call to ask about produ
 
 ---
 
+> ## ⚠️ READ `PROD_RECOVERY.md` BEFORE DEPLOYING ANYTHING (added 2026-10-13)
+>
+> **Do not run `railway up` from this repo.** The deployed backend is a *newer version*
+> than this source tree, and that source is missing from git and from this disk. Deploying
+> from here would delete the Twilio phone agent, the `WS /live` Gemini Live engine,
+> Deepgram/Cartesia support, and Gemini embeddings from production.
+>
+> Also corrected below: **the "OpenAI keys are 429" claim in this file is stale.** The
+> OpenAI key now works (embeddings 200, chat 200), so RAG was never blocked by it.
+> Production Gemini is down for a different reason: the Railway `GEMINI_API_KEY` is
+> **invalid** (400 "API key not valid"), and the `gemini-2.5-*` model ids are retired (404).
+
+
+
 ## Where things stand now (already done)
 
 - **Frontend (Vercel):** https://nimbus-voice-agent-sreedath.vercel.app
@@ -15,7 +29,8 @@ model with tools**, **(3) public phone number people can call to ask about produ
 - Defaults: model **gemini-2.5-flash**, knowledge **ragless** (full 107KB / ~27k-token context every turn),
   ASR **ElevenLabs scribe_v1** (English pinned), TTS **ElevenLabs eleven_turbo_v2_5**.
 - Chat-box widget uses **batch** mode; the voice page (`playground/voice.html`) already **streams** TTS sentence-by-sentence.
-- Tools work (11 tools: add_to_cart, checkout, etc.). Keep model on **Gemini** — OpenAI keys are 429 (out of quota).
+- Tools work (11 tools: add_to_cart, checkout, etc.). ~~Keep model on **Gemini** — OpenAI keys are 429 (out of quota).~~
+  **[STALE 2026-10-13]** OpenAI works fine now; **Gemini** is the broken one (invalid Railway key + retired model ids).
 - Diagnostic: `GET {backend}/debug/chat_log` shows recent requests (model, tools on/off, which tool ran).
 
 ---
@@ -29,7 +44,9 @@ Ranked by impact:
    `playground/voice.js` already does into `assets/widget.js`.
 2. **Ragless → RAG** to shrink the prompt. Full context.md (~27k tokens) is injected every turn.
    RAG retrieves ~4 chunks (~2k tokens) → much faster TTFT + cheaper.
-   - **Blocker:** RAG embeddings currently use OpenAI (429). **Fix: add Gemini embeddings**
+   - ~~**Blocker:** RAG embeddings currently use OpenAI (429).~~ **[STALE]** OpenAI embeddings return 200.
+     Prod already runs `EMBEDDING_PROFILE=gemini` (`gemini-embedding-001`); the index is simply unbuilt.
+     **Old note: add Gemini embeddings**
      (`text-embedding-004`) or local MiniLM (`EMBEDDING_PROFILE=rich`). Rebuild the FAISS index.
 3. **Faster TTS:** switch ElevenLabs `eleven_turbo_v2_5` → **`eleven_flash_v2_5`** (~75ms). Consider streaming TTS chunks.
 4. **Streaming ASR** instead of record-then-upload: browser Web Speech (instant, local, free) as
@@ -86,7 +103,7 @@ Two paths (DECISION NEEDED — see open questions):
 
 ```bash
 # Backend (Railway) — from backend/ after `railway login`
-railway up                                  # redeploy
+railway up   # ⚠️ DO NOT RUN — see PROD_RECOVERY.md; this tree is older than prod
 curl {backend}/debug/chat_log               # inspect recent chat requests
 
 # Frontend (Vercel) — from a copy of nimbus-voice-agent-starter/ (deref playground symlink)

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nimbus Voice Agent</title>
+  <link rel="icon" href="../nimbus-voice-agent-starter/assets/favicon.svg" />
+  <link rel="stylesheet" href="playground.css" />
+  <script src="runtime-config.js"></script>
+  <link rel="stylesheet" href="voice.css" />
+</head>
+<body>
+  <header class="pg-top">
+    <div class="brand">Nimbus <span>Voice</span></div>
+    <div class="top-right">
+      <span id="status" class="pill pill-muted">idle</span>
+      <a class="btn btn-ghost" href="../index.html">&#8592; Home</a>
+      <button id="settingsBtn" class="btn btn-ghost">API keys</button>
+      <a class="btn btn-ghost" href="playground.html">Playground</a>
+    </div>
+  </header>
+
+  <main class="voice-grid">
+    <!-- Controls -->
+    <aside class="panel controls">
+      <h2>Voice pipeline</h2>
+
+      <label class="field"><span>Pipeline</span>
+        <select id="pipeline">
+          <option value="cascade" selected>Cascaded (ASR &rarr; LLM &rarr; TTS)</option>
+          <option value="s2s">Speech-to-speech (Gemini Live)</option>
+        </select>
+        <small class="hint">Cascaded = separate ASR/LLM/TTS. Speech-to-speech = one realtime model (lower latency); ASR/TTS/voice options below don't apply to it.</small>
+      </label>
+
+      <label class="field cascade-only"><span>ASR (speech-to-text)</span><select id="asr"></select></label>
+      <p class="hint" id="asrHint"></p>
+
+      <label class="field cascade-only"><span>Noise cancellation (mic)</span>
+        <select id="noise">
+          <option value="builtin" selected>Built-in (browser)</option>
+          <option value="rnnoise">Built-in + RNNoise</option>
+          <option value="krisp">Krisp (Quail-grade, needs credentials)</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+      <p class="hint" id="noiseHint"></p>
+
+      <label class="field cascade-only"><span>Recognition language</span>
+        <select id="asrLang">
+          <option value="en" selected>English</option>
+          <option value="auto">Auto-detect</option>
+          <option value="ta">Tamil</option>
+          <option value="hi">Hindi</option>
+          <option value="te">Telugu</option>
+          <option value="ml">Malayalam</option>
+          <option value="kn">Kannada</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="ja">Japanese</option>
+          <option value="zh">Chinese</option>
+          <option value="ar">Arabic</option>
+          <option value="pt">Portuguese</option>
+          <option value="ru">Russian</option>
+        </select>
+        <small class="hint">Pin a language so speech is not misdetected. Auto = provider guesses.</small>
+      </label>
+
+      <label class="field cascade-only"><span>TTS (text-to-speech)</span><select id="tts"></select></label>
+      <label class="field cascade-only"><span>Voice</span><select id="voice"></select></label>
+
+      <label class="field cascade-only">
+        <span>Endpoint silence: <b id="epVal">600</b> ms</span>
+        <input type="range" id="endpoint" min="200" max="1500" step="50" value="600" />
+        <small class="hint">How long a pause ends your turn (server ASR modes).</small>
+      </label>
+
+      <label class="field cascade-only">
+        <span>TTS pre-buffer: <b id="bufVal">150</b> ms</span>
+        <input type="range" id="buffer" min="0" max="1000" step="50" value="150" />
+        <small class="hint">Audio buffered before playback. More = smoother, higher latency.</small>
+      </label>
+
+      <label class="field cascade-only">
+        <span>Pipeline mode</span>
+        <div class="seg" id="mode">
+          <button data-v="batch" class="active">Batch</button>
+          <button data-v="stream">Streaming</button>
+        </div>
+        <small class="hint">Streaming speaks sentence-by-sentence as the LLM writes, lowering time-to-first-audio.</small>
+      </label>
+
+      <label class="field cascade-only">
+        <span>Barge-in (interrupt)</span>
+        <select id="barge">
+          <option value="off">Off (no interrupt)</option>
+          <option value="low">Low sensitivity</option>
+          <option value="medium">Medium sensitivity</option>
+          <option value="high" selected>High sensitivity (default)</option>
+        </select>
+        <small class="hint">How easily talking interrupts the agent. Echo-aware double-talk detector. Lower = fewer accidental cut-offs; headphones help.</small>
+      </label>
+
+      <hr class="sep" />
+      <label class="field"><span>Model</span><select id="model"></select></label>
+      <label class="field"><span>Knowledge</span>
+        <div class="seg" id="knowledge">
+          <button data-v="ragless">RAGless</button>
+          <button data-v="rag" class="active">RAG</button>
+          <button data-v="none">None</button>
+        </div>
+      </label>
+      <div class="field toggle-row">
+        <span>Tools</span>
+        <label class="switch"><input type="checkbox" id="toolsEnabled" checked /><span class="slider"></span></label>
+      </div>
+    </aside>
+
+    <!-- Center: mic + transcript -->
+    <section class="panel stage">
+      <div class="mic-wrap">
+        <button id="mic" class="mic-btn" aria-label="Start listening">
+          <svg viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+        </button>
+        <div class="level"><i id="levelBar"></i></div>
+        <div id="phase" class="phase">Press the mic to start a conversation</div>
+      </div>
+      <div id="transcript" class="transcript"></div>
+    </section>
+
+    <!-- Latency pie -->
+    <aside class="panel latency">
+      <h2>Time-to-first-audio breakdown</h2>
+      <canvas id="pie" width="220" height="220"></canvas>
+      <div class="lat-total"><span id="latTotal">0</span><small>ms to first audio</small></div>
+      <div id="pieLegend" class="pie-legend"></div>
+      <h3>Time to first audio</h3>
+      <table class="cmp">
+        <thead><tr><th></th><th>TTFA</th></tr></thead>
+        <tbody>
+          <tr><td>Batch</td><td id="ttfaBatch">-</td></tr>
+          <tr><td>Streaming</td><td id="ttfaStream">-</td></tr>
+        </tbody>
+      </table>
+
+      <div class="latlab cascade-only">
+        <h3>Latency lab</h3>
+        <label class="latmaster">
+          <span>Low-latency mode <small>all optimizations</small></span>
+          <input type="checkbox" id="latMaster" />
+        </label>
+        <p class="latlab-hint">Flip switches, then run a turn and watch the time above move. Target: under 2000 ms.</p>
+        <div id="latSwitches"></div>
+      </div>
+    </aside>
+  </main>
+
+  <dialog id="settings" class="settings">
+    <form method="dialog">
+      <h2>API keys</h2>
+      <p class="hint">Stored in this browser's localStorage (shared with the playground), sent per request.</p>
+      <label class="field"><span>OpenAI</span><input id="k_openai" type="password" placeholder="sk-..." /></label>
+      <label class="field"><span>Gemini</span><input id="k_gemini" type="password" placeholder="AIza..." /></label>
+      <label class="field"><span>ElevenLabs</span><input id="k_elevenlabs" type="password" placeholder="..." /></label>
+      <label class="field"><span>Deepgram (STT)</span><input id="k_deepgram" type="password" placeholder="..." /></label>
+      <label class="field"><span>Cartesia (TTS)</span><input id="k_cartesia" type="password" placeholder="sk_car_..." /></label>
+      <label class="field"><span>Cartesia voice id</span><input id="k_cartesia_voice" type="text" placeholder="e.g. Jacqueline's voice UUID" /></label>
+      <label class="field"><span>Krisp SDK key (noise cancel)</span><input id="k_krisp" type="password" placeholder="used client-side by the Krisp SDK" /></label>
+      <label class="field"><span>Backend URL</span><input id="apiBase" type="text" /></label>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn btn-ghost">Close</button>
+        <button value="save" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="s2s.js"></script>
+  <script type="module" src="voice.js"></script>
+</body>
+</html>
