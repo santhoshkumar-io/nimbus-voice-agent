@@ -128,6 +128,18 @@
       </table>
       <button id="compareBtn" class="btn btn-ghost btn-block">Compare both on next message</button>
 
+      <h3>Cascade vs speech-to-speech</h3>
+      <table class="cmp">
+        <thead><tr><th></th><th>Time to first audio</th></tr></thead>
+        <tbody>
+          <tr><td>Cascade (ASR+LLM+TTS)</td><td id="cmpCascade">-</td></tr>
+          <tr><td>Speech-to-speech</td><td id="cmpS2S">-</td></tr>
+        </tbody>
+      </table>
+      <div id="cmpBars" class="lat-bars"></div>
+      <button id="s2sCompareBtn" class="btn btn-ghost btn-block">Run latency comparison</button>
+      <p class="hint" id="cmpHint">Sends one fixed spoken question through both pipelines.</p>
+
       <h3>Cart</h3>
       <div id="cart" class="cart-view"><em>empty</em></div>
       <h3>Tool calls (last turn)</h3>

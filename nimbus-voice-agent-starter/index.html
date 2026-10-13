@@ -19,9 +19,9 @@
     import { renderHome } from "./assets/render.js";
     bootstrap("", renderHome);
   </script>
-  <!-- Talk to Nimbus: the finalized agent. Backend URL comes from the shared
-       runtime-config (auto-detects localhost vs deployed) -- do not hardcode it
-       here as well, it only drifts out of sync. -->
+  <!-- Talk to Nimbus: the finalized agent. Swap the URL when the backend moves. -->
+  <!-- Backend URL comes from the shared runtime-config (auto-detects localhost
+       vs deployed). Do not hardcode it here as well; it only drifts. -->
   <script src="playground/runtime-config.js"></script>
   <!-- Seed a working default stack for local testing (Gemini + full context + ElevenLabs),
        so the chat box works out of the box. Only applied if the user hasn't saved settings yet. -->
@@ -55,6 +55,34 @@
       if (changed) localStorage.setItem(CK, JSON.stringify(cur));
     })();
   </script>
-  <script src="assets/widget.js?v=8"></script>
+  <script src="assets/s2s.js?v=10"></script>
+  <script src="assets/widget.js?v=10"></script>
+
+  <!-- Vapi voice agent (managed platform), bottom-left so it does not overlap the Nimbus widget -->
+  <script src="https://unpkg.com/@vapi-ai/client-sdk-react/dist/embed/widget.umd.js" async></script>
+  <vapi-widget
+    public-key="16825798-f583-4bdf-89b0-2e2632e32f63"
+    assistant-id="710a59f6-c02d-414a-a82f-ed74e15daffd"
+    mode="voice"
+    position="bottom-left"
+    theme="light"
+    size="compact"
+    color-accent="#6d5efb"
+    cta-title="Talk to Nimbus (Vapi)"
+    cta-subtitle="Managed voice agent"
+    title="Nimbus voice agent (Vapi)"
+    start-button-text="Start call"
+    end-button-text="End call"
+    voice-show-transcript="true"
+  ></vapi-widget>
+
+  <!-- LiveKit voice agent (managed platform). The embed has no position option and its
+       launcher is position:fixed inside a shadow root, so we make the host a containing
+       block and anchor it toward bottom-center (needs the domain allowlisted in LiveKit Cloud). -->
+  <style>
+    #lk-embed-wrapper{position:fixed!important;left:50%!important;right:auto!important;bottom:0!important;
+      width:0!important;height:0!important;transform:translateZ(0)!important;z-index:2147483000!important}
+  </style>
+  <script src="https://cloud.livekit.io/embed-popup.js" data-lk-agent="CA_Q6xULQemCJiV" data-lk-color="#002CF2"></script>
 </body>
 </html>

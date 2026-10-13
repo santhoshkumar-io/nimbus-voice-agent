@@ -25,10 +25,28 @@
     <aside class="panel controls">
       <h2>Voice pipeline</h2>
 
-      <label class="field"><span>ASR (speech-to-text)</span><select id="asr"></select></label>
+      <label class="field"><span>Pipeline</span>
+        <select id="pipeline">
+          <option value="cascade" selected>Cascaded (ASR &rarr; LLM &rarr; TTS)</option>
+          <option value="s2s">Speech-to-speech (Gemini Live)</option>
+        </select>
+        <small class="hint">Cascaded = separate ASR/LLM/TTS. Speech-to-speech = one realtime model (lower latency); ASR/TTS/voice options below don't apply to it.</small>
+      </label>
+
+      <label class="field cascade-only"><span>ASR (speech-to-text)</span><select id="asr"></select></label>
       <p class="hint" id="asrHint"></p>
 
-      <label class="field"><span>Recognition language</span>
+      <label class="field cascade-only"><span>Noise cancellation (mic)</span>
+        <select id="noise">
+          <option value="builtin" selected>Built-in (browser)</option>
+          <option value="rnnoise">Built-in + RNNoise</option>
+          <option value="krisp">Krisp (Quail-grade, needs credentials)</option>
+          <option value="off">Off</option>
+        </select>
+      </label>
+      <p class="hint" id="noiseHint"></p>
+
+      <label class="field cascade-only"><span>Recognition language</span>
         <select id="asrLang">
           <option value="en" selected>English</option>
           <option value="auto">Auto-detect</option>
@@ -49,22 +67,22 @@
         <small class="hint">Pin a language so speech is not misdetected. Auto = provider guesses.</small>
       </label>
 
-      <label class="field"><span>TTS (text-to-speech)</span><select id="tts"></select></label>
-      <label class="field"><span>Voice</span><select id="voice"></select></label>
+      <label class="field cascade-only"><span>TTS (text-to-speech)</span><select id="tts"></select></label>
+      <label class="field cascade-only"><span>Voice</span><select id="voice"></select></label>
 
-      <label class="field">
+      <label class="field cascade-only">
         <span>Endpoint silence: <b id="epVal">600</b> ms</span>
         <input type="range" id="endpoint" min="200" max="1500" step="50" value="600" />
         <small class="hint">How long a pause ends your turn (server ASR modes).</small>
       </label>
 
-      <label class="field">
+      <label class="field cascade-only">
         <span>TTS pre-buffer: <b id="bufVal">150</b> ms</span>
         <input type="range" id="buffer" min="0" max="1000" step="50" value="150" />
         <small class="hint">Audio buffered before playback. More = smoother, higher latency.</small>
       </label>
 
-      <label class="field">
+      <label class="field cascade-only">
         <span>Pipeline mode</span>
         <div class="seg" id="mode">
           <button data-v="batch" class="active">Batch</button>
@@ -73,7 +91,7 @@
         <small class="hint">Streaming speaks sentence-by-sentence as the LLM writes, lowering time-to-first-audio.</small>
       </label>
 
-      <label class="field">
+      <label class="field cascade-only">
         <span>Barge-in (interrupt)</span>
         <select id="barge">
           <option value="off">Off (no interrupt)</option>
@@ -125,6 +143,16 @@
           <tr><td>Streaming</td><td id="ttfaStream">-</td></tr>
         </tbody>
       </table>
+
+      <div class="latlab cascade-only">
+        <h3>Latency lab</h3>
+        <label class="latmaster">
+          <span>Low-latency mode <small>all optimizations</small></span>
+          <input type="checkbox" id="latMaster" />
+        </label>
+        <p class="latlab-hint">Flip switches, then run a turn and watch the time above move. Target: under 2000 ms.</p>
+        <div id="latSwitches"></div>
+      </div>
     </aside>
   </main>
 
@@ -135,6 +163,10 @@
       <label class="field"><span>OpenAI</span><input id="k_openai" type="password" placeholder="sk-..." /></label>
       <label class="field"><span>Gemini</span><input id="k_gemini" type="password" placeholder="AIza..." /></label>
       <label class="field"><span>ElevenLabs</span><input id="k_elevenlabs" type="password" placeholder="..." /></label>
+      <label class="field"><span>Deepgram (STT)</span><input id="k_deepgram" type="password" placeholder="..." /></label>
+      <label class="field"><span>Cartesia (TTS)</span><input id="k_cartesia" type="password" placeholder="sk_car_..." /></label>
+      <label class="field"><span>Cartesia voice id</span><input id="k_cartesia_voice" type="text" placeholder="e.g. Jacqueline's voice UUID" /></label>
+      <label class="field"><span>Krisp SDK key (noise cancel)</span><input id="k_krisp" type="password" placeholder="used client-side by the Krisp SDK" /></label>
       <label class="field"><span>Backend URL</span><input id="apiBase" type="text" /></label>
       <div class="dialog-actions">
         <button value="cancel" class="btn btn-ghost">Close</button>
@@ -143,6 +175,7 @@
     </form>
   </dialog>
 
+  <script src="s2s.js"></script>
   <script type="module" src="voice.js"></script>
 </body>
 </html>

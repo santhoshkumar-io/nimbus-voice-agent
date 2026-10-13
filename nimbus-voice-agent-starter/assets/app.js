@@ -121,12 +121,58 @@ export function mountHeader(active = "") {
       <a href="index.html" class="brand">${brandMark(34)} Nimbus</a>
       <nav class="nav-links">${links}</nav>
       <div class="nav-cta">
-        <a href="pricing.html" class="btn btn-ghost btn-sm">Pricing</a>
+        <a href="tel:+13186256242" class="btn btn-ghost btn-sm" style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h3l2 5-2.5 1.5a11 11 0 0 0 5 5L17 14l5 2v3a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"/></svg>+1 318-625-6242</a>
         <a href="products.html" class="btn btn-primary btn-sm">Get started</a>
       </div>
     </div>`,
   });
   document.body.prepend(header);
+
+  // Prominent call banner so anyone can phone the voice agent, or request a callback.
+  const callbar = el("div", {
+    class: "callbar",
+    html: `<div class="container" style="text-align:center;padding:9px 22px;font-size:13.5px;font-weight:600;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h3l2 5-2.5 1.5a11 11 0 0 0 5 5L17 14l5 2v3a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"/></svg>
+      <span>Talk to the Nimbus AI voice agent:</span>
+      <a href="tel:+13186256242" style="color:#fff;text-decoration:underline;font-weight:700">+1 (318) 625-6242</a>
+      <span style="opacity:.75">or</span>
+      <a href="#" id="cb-open" style="color:#fff;text-decoration:underline;font-weight:700">have it call you</a>
+    </div>`,
+  });
+  callbar.style.cssText = "background:linear-gradient(90deg,#6e8bff,#9d7bff);color:#fff";
+  document.body.prepend(callbar);
+
+  // Request-a-callback modal: enter a number, the agent phones it.
+  const cbBase = (window.NIMBUS_API_BASE || "").replace(/\/+$/, "");
+  const cb = el("div", { class: "cb-modal", html: `
+    <div class="cb-card">
+      <button class="cb-x" aria-label="Close">&times;</button>
+      <h3 style="margin:0 0 6px;font-family:'Space Grotesk',Inter,sans-serif">Get a call from the AI agent</h3>
+      <p style="margin:0 0 13px;color:#5b6475;font-size:13.5px">Enter your phone number with country code. The agent will call you; sign in on the keypad (123456 / 123456) to add to cart or check out.</p>
+      <input id="cb-phone" type="tel" autocomplete="tel" placeholder="+91 79942 06324" style="width:100%;padding:11px 13px;border:1px solid #d8dce6;border-radius:10px;font:inherit;font-size:15px" />
+      <button id="cb-call" style="width:100%;margin-top:10px;padding:11px;border:none;border-radius:10px;background:linear-gradient(90deg,#6e8bff,#9d7bff);color:#fff;font-weight:700;cursor:pointer;font-size:15px">Call me now</button>
+      <p id="cb-status" style="margin:11px 0 0;font-size:13.5px;min-height:18px"></p>
+    </div>` });
+  cb.style.cssText = "position:fixed;inset:0;z-index:10000;background:rgba(20,24,40,.55);display:none;align-items:center;justify-content:center;padding:20px";
+  document.body.append(cb);
+  cb.querySelector(".cb-card").style.cssText = "background:#fff;border-radius:16px;padding:24px;max-width:370px;width:100%;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.3)";
+  cb.querySelector(".cb-x").style.cssText = "position:absolute;top:11px;right:14px;border:none;background:transparent;font-size:24px;line-height:1;cursor:pointer;color:#8b93a7";
+  const cbClose = () => { cb.style.display = "none"; };
+  document.getElementById("cb-open").addEventListener("click", (e) => { e.preventDefault(); cb.style.display = "flex"; setTimeout(() => cb.querySelector("#cb-phone").focus(), 50); });
+  cb.querySelector(".cb-x").addEventListener("click", cbClose);
+  cb.addEventListener("click", (e) => { if (e.target === cb) cbClose(); });
+  cb.querySelector("#cb-call").addEventListener("click", async () => {
+    const phone = cb.querySelector("#cb-phone").value.trim();
+    const st = cb.querySelector("#cb-status"), btn = cb.querySelector("#cb-call");
+    st.style.color = "#5b6475"; st.textContent = "Placing the call..."; btn.disabled = true;
+    try {
+      const r = await fetch(cbBase + "/callback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone }) });
+      const d = await r.json();
+      if (d.ok) { st.style.color = "#16a34a"; st.textContent = d.message || "Calling you now."; }
+      else { st.style.color = "#dc2626"; st.textContent = d.error || "Could not place the call."; }
+    } catch (e) { st.style.color = "#dc2626"; st.textContent = "Network error: " + e.message; }
+    btn.disabled = false;
+  });
 
   // Subtle border/shadow once the page is scrolled.
   const onScroll = () => header.classList.toggle("scrolled", window.scrollY > 8);
@@ -159,6 +205,7 @@ export function mountFooter(catalog) {
           <li>${escapeHtml(c.contact?.sales || "")}</li>
           <li>${escapeHtml(c.contact?.support || "")}</li>
           <li>${escapeHtml(c.contact?.phone || "")}</li>
+          <li style="margin-top:8px;color:#8b93a7;font-size:12.5px">Order by phone: call our voice agent and sign in on the keypad (username + password) to add to cart or check out. Only signed-in callers can place orders.</li>
         </ul></div>
       </div>
       <div class="footer-bottom">

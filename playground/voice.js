@@ -9,9 +9,17 @@ const $ = (id) => document.getElementById(id);
 
 const PIE = {
   asr_ms: ["ASR", "#3fb0c9"], rag_ms: ["RAG", "#9d7bff"], llm_total_ms: ["LLM", "#6e8bff"],
-  tool_ms: ["Tools", "#2ea043"], tts_ms: ["TTS", "#d29922"], buffer_ms: ["Buffer", "#e06aa8"],
+  tool_llm_ms: ["Tool call (LLM round-trip)", "#3fb950"], tool_ms: ["Tool exec", "#2ea043"],
+  tts_ms: ["TTS", "#d29922"], buffer_ms: ["Buffer", "#e06aa8"],
   other_ms: ["Other/net", "#8b93a7"],
 };
+// The tool round-trip time lives inside llm_total; split it out so "LLM" shows
+// pure generation and "Tool call" shows the extra round-trip a tool triggered.
+function splitToolLatency(lat) {
+  const d = { ...lat };
+  d.llm_total_ms = Math.max(0, (lat.llm_total_ms || 0) - (lat.tool_llm_ms || 0));
+  return d;
+}
 
 const state = {
   session: "voice-" + Math.random().toString(36).slice(2),
@@ -25,6 +33,8 @@ const state = {
   ttsAnalyser: null, ttsBuf: null, queue: [], source: null, playing: false,
   cancelled: false, mode: "batch",
   playStartTs: 0, echoGain: 0.4, bargeFrames: 0, turnStart: 0, firstAudioAt: 0,
+  shortAnswers: true, fastTTS: false,  // latency-lab flags
+  speakingTurn: false,  // true while a streamed turn is still producing sentences
 };
 
 // Barge-in: a double-talk detector. We play TTS through Web Audio so we can
@@ -53,6 +63,8 @@ function authHeaders(extra) {
   if (state.keys.openai) h["X-OpenAI-Key"] = state.keys.openai;
   if (state.keys.gemini) h["X-Gemini-Key"] = state.keys.gemini;
   if (state.keys.elevenlabs) h["X-ElevenLabs-Key"] = state.keys.elevenlabs;
+  if (state.keys.deepgram) h["X-Deepgram-Key"] = state.keys.deepgram;
+  if (state.keys.cartesia) h["X-Cartesia-Key"] = state.keys.cartesia;
   return h;
 }
 
@@ -79,7 +91,8 @@ function addMetaLine(text) {
 }
 
 // ---- latency pie ----
-function renderPie(lat) {
+function renderPie(rawLat) {
+  const lat = splitToolLatency(rawLat);
   const ctx = $("pie").getContext("2d");
   const W = $("pie").width, cx = W / 2, cy = W / 2, r = W / 2 - 6;
   ctx.clearRect(0, 0, W, W);
@@ -100,13 +113,93 @@ function renderPie(lat) {
   ).join("");
 }
 
+// ---- noise cancellation (mic) ----
+// Quail (LiveKit's canceller) is not available outside LiveKit, so we do it in
+// the browser: built-in constraints, plus an optional free RNNoise worklet.
+const NOISE_ASSETS = "assets/noise";
+const LS_NOISE = "nimbus_pg_noise";
+function noiseMode() {
+  const sel = $("noise"); return (sel && sel.value) || localStorage.getItem(LS_NOISE) || "builtin";
+}
+function micConstraints(mode) {
+  if (mode === "off") return { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  // RNNoise/Krisp do the suppression themselves; keep echo cancel, drop browser NS/AGC.
+  if (mode === "rnnoise" || mode === "krisp") return { echoCancellation: true, noiseSuppression: false, autoGainControl: false };
+  return { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+}
+// Route a raw mic stream through RNNoise; returns a cleaned MediaStream. Any
+// failure (asset missing, unsupported) falls back to the raw stream.
+async function applyRnnoise(rawStream, ac) {
+  try {
+    const mod = await import(`${NOISE_ASSETS}/index.js`);
+    await ac.audioWorklet.addModule(`${NOISE_ASSETS}/rnnoiseWorklet.js`);
+    const wasmBinary = await mod.loadRnnoise({
+      url: `${NOISE_ASSETS}/rnnoise.wasm`, simdUrl: `${NOISE_ASSETS}/rnnoise_simd.wasm`,
+    });
+    const node = new mod.RnnoiseWorkletNode(ac, { maxChannels: 1, wasmBinary });
+    const src = ac.createMediaStreamSource(rawStream);
+    const dest = ac.createMediaStreamDestination();
+    src.connect(node).connect(dest);
+    state.rnnoise = node;
+    return dest.stream;
+  } catch (e) {
+    setNoiseHint(`RNNoise unavailable, using built-in (${String(e).slice(0, 60)})`);
+    return rawStream;
+  }
+}
+
+// Krisp is the licensed engine behind LiveKit's "Quail". Its Web SDK is gated,
+// so we can't bundle it; instead we load an adapter you drop in at
+// assets/krisp/index.js exporting createKrispStream(rawStream, ac, key) ->
+// { stream, controller? }. See assets/krisp/README.md. Falls back to built-in.
+const KRISP_ASSETS = "assets/krisp";
+async function applyKrisp(rawStream, ac) {
+  try {
+    const mod = await import(`${KRISP_ASSETS}/index.js`);
+    if (typeof mod.createKrispStream !== "function") {
+      throw new Error("adapter missing createKrispStream export");
+    }
+    const out = await mod.createKrispStream(rawStream, ac, (state.keys && state.keys.krisp) || "");
+    state.krisp = out.controller || null;
+    return out.stream || rawStream;
+  } catch (e) {
+    setNoiseHint(`Krisp not configured, using built-in. Add credentials per assets/krisp/README.md (${String(e).slice(0, 60)})`);
+    return rawStream;
+  }
+}
+
+function setNoiseHint(t) { const el = $("noiseHint"); if (el) el.textContent = t; }
+function updateNoiseHint() {
+  const m = noiseMode();
+  setNoiseHint(m === "rnnoise"
+    ? "Echo-cancel + free RNNoise worklet (Quail-style, on-device). First use loads a small model."
+    : m === "krisp"
+    ? "Krisp (the engine behind LiveKit's Quail). Needs the Krisp SDK in assets/krisp/ + a key; see README."
+    : m === "off" ? "Raw mic, no processing."
+    : "Browser built-in noise suppression + echo cancellation.");
+}
+// Release the mic + audio graph so a new noise mode is picked up on next start.
+function releaseMic() {
+  try { if (state.rnnoise && state.rnnoise.destroy) state.rnnoise.destroy(); } catch {}
+  try { if (state.krisp && state.krisp.destroy) state.krisp.destroy(); } catch {}
+  state.rnnoise = null; state.krisp = null;
+  for (const s of [state.rawStream, state.stream]) {
+    try { s && s.getTracks().forEach((t) => t.stop()); } catch {}
+  }
+  try { if (state.ac && state.ac.state !== "closed") state.ac.close(); } catch {}
+  state.stream = null; state.rawStream = null; state.ac = null;
+  state.analyser = null; state.ttsAnalyser = null;
+}
+
 // ---- mic + analyser ----
 async function ensureMic() {
   if (state.stream) return;
-  state.stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-  });
+  const mode = noiseMode();
+  const raw = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(mode) });
+  state.rawStream = raw;
   state.ac = new (window.AudioContext || window.webkitAudioContext)();
+  state.stream = mode === "rnnoise" ? await applyRnnoise(raw, state.ac)
+    : mode === "krisp" ? await applyKrisp(raw, state.ac) : raw;
   const src = state.ac.createMediaStreamSource(state.stream);
   state.analyser = state.ac.createAnalyser();
   state.analyser.fftSize = 1024;
@@ -158,11 +251,16 @@ function loop() {
       // adapt echo coupling only when the user is NOT talking
       state.echoGain = Math.min(4, Math.max(0, state.echoGain * 0.97 + (level / out) * 0.03));
     }
-    if (bc.enabled && since > BARGE_GRACE_MS) {
+    if (bc.enabled && since > BARGE_GRACE_MS && state.playing) {
       // Require sustained speech-band energy; a single loud transient (tap,
       // footstep) is too brief to accumulate frames, and dips decay quickly.
+      // Only count while audio is actually playing: during the gap between
+      // streamed sentences there is nothing to interrupt, and the echo tail
+      // would otherwise be misread as the user talking.
       state.bargeFrames = speaking ? state.bargeFrames + 1 : Math.max(0, state.bargeFrames - 2);
       if (state.bargeFrames >= bc.frames) bargeIn();
+    } else if (!state.playing) {
+      state.bargeFrames = Math.max(0, state.bargeFrames - 1);
     }
   } else if (serverMode && state.phase === "listening") {
     if (level > th) { state.listenFrames = (state.listenFrames || 0) + 1; if (state.listenFrames >= START_FRAMES) { state.listenFrames = 0; beginRecording(); } }
@@ -220,12 +318,18 @@ function startBrowserASR() {
                   es: "es-ES", fr: "fr-FR", de: "de-DE", ja: "ja-JP", zh: "zh-CN", ar: "ar-SA", pt: "pt-BR", ru: "ru-RU" };
   const langSel = ($("asrLang") && $("asrLang").value) || "en";
   rec.continuous = true; rec.interimResults = false; rec.lang = BCP47[langSel] || "en-US";
+  state.speechEndTs = 0;  // fresh recognizer: no end-of-speech mark yet for this turn
   rec.onspeechend = () => { state.speechEndTs = performance.now(); };
   rec.onresult = async (ev) => {
     const text = ev.results[ev.results.length - 1][0].transcript.trim();
     if (!isSpeech(text) || state.phase === "thinking" || state.phase === "speaking") return;
     addMsg("user", text);
-    const asrMs = state.speechEndTs ? Math.round(performance.now() - state.speechEndTs) : 0;
+    // Time from end-of-speech to transcript. onspeechend does not always fire before
+    // onresult after a restart, so a leftover speechEndTs from a previous turn would
+    // otherwise inflate this to many seconds. Consume it and ignore implausible values.
+    const dt = state.speechEndTs ? Math.round(performance.now() - state.speechEndTs) : 0;
+    state.speechEndTs = 0;  // consume so it cannot leak into the next turn
+    const asrMs = dt >= 0 && dt <= 4000 ? dt : 0;  // browser ASR is near-instant
     await runPipeline(text, asrMs);
   };
   rec.onerror = () => {};
@@ -240,7 +344,7 @@ function chatBody(message, mode) {
   const know = document.querySelector("#knowledge .active").dataset.v;
   return JSON.stringify({
     session_id: state.session, message, mode,
-    model_key: $("model").value, response_length: "low",
+    model_key: $("model").value, response_length: state.shortAnswers ? "low" : "high",
     use_context: know === "ragless", use_rag: know === "rag", top_k: 4,
     tools_enabled: $("toolsEnabled").checked,
     enabled_tools: $("toolsEnabled").checked ? null : [],
@@ -249,6 +353,7 @@ function chatBody(message, mode) {
 
 async function runPipeline(userText, asrMs) {
   state.cancelled = false;
+  state.speakingTurn = false;
   state.turnStart = performance.now();
   state.firstAudioAt = 0;
   if ($("asr").value === "browser") stopBrowserASR();  // avoid hearing our own audio
@@ -291,7 +396,7 @@ async function pipelineStream(userText, asrMs) {
     const tts = await synth(t);
     if (!tts || state.cancelled) return;
     if (!firstSentenceTs) { firstSentenceTs = fs; firstSynthMs = performance.now() - fs; }
-    if (!spoke) { spoke = true; beginSpeaking(); await new Promise((r) => setTimeout(r, Number($("buffer").value))); }
+    if (!spoke) { spoke = true; state.speakingTurn = true; beginSpeaking(); await new Promise((r) => setTimeout(r, Number($("buffer").value))); }
     enqueue(tts.audio);
   };
   try {
@@ -320,6 +425,9 @@ async function pipelineStream(userText, asrMs) {
   } catch (e) { bubble.textContent = "stream failed: " + e.message; resumeListening(); return; }
   if (state.cancelled) return;
   if (!spoke) { resumeListening(); return; }
+  // Stream is fully produced: allow the turn to end once playback drains.
+  state.speakingTurn = false;
+  if (state.phase === "speaking" && !state.playing && state.queue.length === 0) resumeListening();
   // TTFA breakdown: only the first sentence's LLM + TTS gate first audio
   const ragMs = (lat0 && lat0.rag_ms) || 0;
   const llmToFirst = firstSentenceTs ? firstSentenceTs - state.turnStart : 0;
@@ -346,9 +454,12 @@ function finishTurn(lat, mode) {
 // ---- TTS synth + Web Audio queue playback ----
 async function synth(text) {
   try {
+    const provider = $("tts").value;
+    // Cartesia is voice-id driven; use the id pasted in settings, not the dropdown label.
+    const voice = provider === "cartesia" ? (state.keys.cartesia_voice || "") : $("voice").value;
     const r = await fetch(BASE + "/tts", {
       method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ text, provider: $("tts").value, voice: $("voice").value }),
+      body: JSON.stringify({ text, provider, voice, fast: state.fastTTS }),
     });
     if (!r.ok) return null;
     const ms = Number(r.headers.get("X-TTS-Ms") || 0);
@@ -374,7 +485,14 @@ async function enqueue(arrayBuffer) {
 function playNext() {
   if (state.cancelled) { state.queue = []; state.playing = false; return; }
   const buf = state.queue.shift();
-  if (!buf) { state.playing = false; if (state.phase === "speaking") resumeListening(); return; }
+  if (!buf) {
+    state.playing = false;
+    // Only end the turn if no more sentences are still being streamed in.
+    // Mid-stream drains (first sentence done before the next is synthesized)
+    // must NOT resume listening, or we cut our own response off.
+    if (state.phase === "speaking" && !state.speakingTurn) resumeListening();
+    return;
+  }
   state.playing = true;
   const src = state.ac.createBufferSource();
   src.buffer = buf;
@@ -387,6 +505,7 @@ function playNext() {
 
 function stopPlayback() {
   state.cancelled = true;
+  state.speakingTurn = false;
   state.queue = [];
   if (state.source) { try { state.source.onended = null; state.source.stop(); } catch {} state.source = null; }
   state.playing = false;
@@ -483,28 +602,138 @@ function initSettings() {
   $("settingsBtn").addEventListener("click", () => {
     $("k_openai").value = state.keys.openai || ""; $("k_gemini").value = state.keys.gemini || "";
     $("k_elevenlabs").value = state.keys.elevenlabs || ""; $("apiBase").value = BASE;
+    $("k_deepgram").value = state.keys.deepgram || "";
+    $("k_cartesia").value = state.keys.cartesia || ""; $("k_cartesia_voice").value = state.keys.cartesia_voice || "";
+    $("k_krisp").value = state.keys.krisp || "";
     dlg.showModal();
   });
   dlg.addEventListener("close", () => {
     if (dlg.returnValue !== "save") return;
-    state.keys = { openai: $("k_openai").value.trim(), gemini: $("k_gemini").value.trim(), elevenlabs: $("k_elevenlabs").value.trim() };
+    state.keys = {
+      openai: $("k_openai").value.trim(), gemini: $("k_gemini").value.trim(),
+      elevenlabs: $("k_elevenlabs").value.trim(),
+      deepgram: $("k_deepgram").value.trim(), cartesia: $("k_cartesia").value.trim(),
+      cartesia_voice: $("k_cartesia_voice").value.trim(), krisp: $("k_krisp").value.trim(),
+    };
     localStorage.setItem(LS_KEYS, JSON.stringify(state.keys));
     if ($("apiBase").value.trim()) localStorage.setItem(LS_BASE, $("apiBase").value.trim());
   });
 }
 
+// ---- speech-to-speech (Gemini Live) pipeline ----
+let s2s = null;
+function pipelineMode() { return ($("pipeline") && $("pipeline").value) || "cascade"; }
+function applyPipelineUI() {
+  const s2s = pipelineMode() === "s2s";
+  document.querySelectorAll(".cascade-only").forEach((el) => { el.style.display = s2s ? "none" : ""; });
+  const hint = $("s2sHint"); if (hint) hint.style.display = s2s ? "" : "none";
+}
+function s2sBase() { return localStorage.getItem(LS_BASE) || window.NIMBUS_API_BASE || "http://localhost:8100"; }
+
+function startS2S() {
+  const know = document.querySelector("#knowledge .active").dataset.v;
+  s2s = window.NimbusS2S(s2sBase, () => state.keys);
+  state.on = true;
+  setPhase("listening", "connecting to speech-to-speech...");
+  s2s.start(
+    { session_id: state.session, knowledge: know, tools_enabled: $("toolsEnabled").checked,
+      response_length: "low", model_key: $("model").value },
+    {
+      onStatus: (t) => setPhase(t === "listening" ? "listening" : t === "idle" ? "idle" : "thinking", t),
+      onTurn: (u, a) => { if (u) addMsg("user", u); if (a) addMsg("assistant", a); },
+      onTool: (names) => { addMetaLine("- tools: " + names.join(", ") + " -"); },
+      onLatency: (ms) => { addMetaLine("- time-to-first-audio: " + Math.round(ms) + " ms -"); renderPie({ llm_total_ms: ms }); },
+      onError: (e) => { setPhase("idle", "S2S error: " + e); },
+    }
+  );
+}
+function stopS2S() { state.on = false; if (s2s) { s2s.stop(); s2s = null; } setPhase("idle", "stopped"); }
+
+function micToggle() {
+  if (pipelineMode() === "s2s") return state.on ? stopS2S() : startS2S();
+  return state.on ? stop() : start();
+}
+
+// ---- Latency lab: switches that drive the cascade controls (ON = lower latency) ----
+const LAT_SWITCHES = [
+  { id: "stream", t: "Streaming", d: "overlap LLM + TTS",
+    read: () => state.mode === "stream",
+    set: (v) => document.querySelector(`#mode button[data-v="${v ? "stream" : "batch"}"]`).click() },
+  { id: "short", t: "Short answers", d: "fewer tokens to speak",
+    read: () => state.shortAnswers, set: (v) => { state.shortAnswers = v; } },
+  { id: "fastmodel", t: "Fast model", d: "Gemini Flash vs Pro",
+    read: () => $("model").value === "gemini-flash",
+    set: (v) => { $("model").value = v ? "gemini-flash" : "gemini-pro"; $("model").dispatchEvent(new Event("change")); } },
+  { id: "rag", t: "Lean prompt (RAG)", d: "small retrieved context",
+    read: () => document.querySelector("#knowledge .active")?.dataset.v === "rag",
+    set: (v) => document.querySelector(`#knowledge button[data-v="${v ? "rag" : "ragless"}"]`).click() },
+  { id: "fasttts", t: "Flash TTS", d: "ElevenLabs Flash v2.5",
+    read: () => state.fastTTS,
+    set: (v) => { state.fastTTS = v; if (v) { $("tts").value = "elevenlabs"; $("tts").dispatchEvent(new Event("change")); } } },
+  { id: "localasr", t: "Local ASR", d: "browser, no upload",
+    read: () => $("asr").value === "browser",
+    set: (v) => { $("asr").value = v ? "browser" : "elevenlabs"; $("asr").dispatchEvent(new Event("change")); } },
+  { id: "endpoint", t: "Snappy endpointing", d: "end the turn faster",
+    read: () => Number($("endpoint").value) <= 400,
+    set: (v) => { $("endpoint").value = v ? 300 : 700; $("endpoint").dispatchEvent(new Event("input")); } },
+  { id: "buffer", t: "Tiny pre-buffer", d: "start audio sooner",
+    read: () => Number($("buffer").value) === 0,
+    set: (v) => { $("buffer").value = v ? 0 : 150; $("buffer").dispatchEvent(new Event("input")); } },
+];
+
+function syncLatMaster() {
+  const m = $("latMaster");
+  if (m) m.checked = LAT_SWITCHES.every((s) => s.read());
+}
+
+function initLatLab() {
+  const host = $("latSwitches");
+  if (!host) return;
+  host.innerHTML = LAT_SWITCHES.map((s) =>
+    `<label class="latsw"><span><span class="lsw-t">${s.t}</span><br><span class="lsw-d">${s.d}</span></span>` +
+    `<input type="checkbox" data-id="${s.id}" /></label>`).join("");
+  LAT_SWITCHES.forEach((s) => {
+    const cb = host.querySelector(`input[data-id="${s.id}"]`);
+    cb.checked = s.read();
+    cb.addEventListener("change", () => { s.set(cb.checked); syncLatMaster(); persistConfig(); });
+  });
+  $("latMaster").addEventListener("change", () => {
+    const v = $("latMaster").checked;
+    LAT_SWITCHES.forEach((s) => {
+      s.set(v);
+      host.querySelector(`input[data-id="${s.id}"]`).checked = v;
+    });
+    persistConfig();
+  });
+  syncLatMaster();
+}
+
 function init() {
-  $("mic").addEventListener("click", () => (state.on ? stop() : start()));
+  $("mic").addEventListener("click", micToggle);
+  if ($("pipeline")) $("pipeline").addEventListener("change", () => { if (state.on) micToggle(); applyPipelineUI(); });
+  applyPipelineUI();
   $("endpoint").addEventListener("input", (e) => $("epVal").textContent = e.target.value);
   $("buffer").addEventListener("input", (e) => $("bufVal").textContent = e.target.value);
   document.querySelectorAll("#mode button").forEach((b) =>
     b.addEventListener("click", () => { document.querySelectorAll("#mode button").forEach((x) => x.classList.remove("active")); b.classList.add("active"); state.mode = b.dataset.v; }));
   $("tts").addEventListener("change", syncVoices);
   $("asr").addEventListener("change", () => { updateAsrHint(); if (state.on) { stopBrowserASR(); resumeListening(); } });
+  if ($("noise")) {
+    const saved = localStorage.getItem(LS_NOISE); if (saved) $("noise").value = saved;
+    updateNoiseHint();
+    $("noise").addEventListener("change", () => {
+      localStorage.setItem(LS_NOISE, $("noise").value);
+      updateNoiseHint();
+      const wasOn = state.on;
+      if (wasOn) stop();
+      releaseMic();
+      if (wasOn) start();
+    });
+  }
   document.querySelectorAll("#knowledge button").forEach((b) =>
     b.addEventListener("click", () => { document.querySelectorAll("#knowledge button").forEach((x) => x.classList.remove("active")); b.classList.add("active"); }));
   initSettings();
-  loadModels(); loadVoices().then(() => { updateAsrHint(); persistConfig(); });
+  loadModels(); loadVoices().then(() => { updateAsrHint(); initLatLab(); persistConfig(); });
   const cp = document.querySelector(".controls");
   cp.addEventListener("change", persistConfig);
   cp.addEventListener("input", persistConfig);

@@ -41,12 +41,15 @@ function addMsg(role, text) {
 
 // ---- latency rendering ----
 const STAGE_LABELS = {
-  asr_ms: "ASR", rag_ms: "RAG", llm_total_ms: "LLM", tool_ms: "Tools",
+  asr_ms: "ASR", rag_ms: "RAG", llm_total_ms: "LLM",
+  tool_llm_ms: "Tool call (LLM round-trip)", tool_ms: "Tool exec",
   tts_ms: "TTS", buffer_ms: "Buffer",
 };
-function renderLatency(lat) {
-  if (!lat) return;
-  $("latTotal").textContent = Math.round(lat.total_ms);
+function renderLatency(rawLat) {
+  if (!rawLat) return;
+  // Tool round-trip time lives inside llm_total; split it into its own row.
+  const lat = { ...rawLat, llm_total_ms: Math.max(0, (rawLat.llm_total_ms || 0) - (rawLat.tool_llm_ms || 0)) };
+  $("latTotal").textContent = Math.round(rawLat.total_ms);
   const max = Math.max(1, ...Object.keys(STAGE_LABELS).map((k) => lat[k] || 0));
   $("latBars").innerHTML = "";
   for (const [k, label] of Object.entries(STAGE_LABELS)) {
@@ -319,6 +322,42 @@ function initSettings() {
   });
 }
 
+function cmpRow(label, ms, max) {
+  const w = ms ? (ms / max) * 100 : 0;
+  return `<div class="lat-row"><span>${label}</span><div class="bar"><i style="width:${w}%"></i></div><span class="val">${ms ? Math.round(ms) + "ms" : "-"}</span></div>`;
+}
+
+async function runS2SCompare() {
+  const btn = $("s2sCompareBtn");
+  btn.disabled = true; btn.textContent = "Running both pipelines...";
+  $("cmpHint").textContent = "Sending one fixed spoken question through cascade and speech-to-speech...";
+  try {
+    const r = await fetch(state.base + "/latency/compare", {
+      method: "POST", headers: authHeaders(),
+      body: JSON.stringify({ knowledge: state.knowledge, model_key: $("model").value }),
+    });
+    const d = await r.json();
+    if (d.error) { $("cmpHint").textContent = "Error: " + d.error; return; }
+    const c = d.cascade || {}, s = d.s2s || {};
+    const cMs = c.error ? null : c.ttfa_ms, sMs = s.error ? null : s.ttfa_ms;
+    $("cmpCascade").textContent = c.error ? "err" : Math.round(cMs) + " ms";
+    $("cmpS2S").textContent = s.error ? "err" : Math.round(sMs) + " ms";
+    const max = Math.max(cMs || 0, sMs || 0, 1);
+    $("cmpBars").innerHTML = cmpRow("Cascade", cMs, max) + cmpRow("S2S", sMs, max);
+    if (cMs && sMs) {
+      const diff = Math.round(Math.abs(cMs - sMs));
+      $("cmpHint").innerHTML = `Q: "${d.question}"<br>Speech-to-speech is <b>${sMs < cMs ? diff + " ms faster" : diff + " ms slower"}</b>. ` +
+        `Cascade = ASR ${Math.round(c.asr_ms)} + LLM ${Math.round(c.llm_ms)} + TTS ${Math.round(c.tts_ms)} ms.`;
+    } else {
+      $("cmpHint").textContent = (c.error ? "Cascade: " + c.error + ". " : "") + (s.error ? "S2S: " + s.error : "");
+    }
+  } catch (e) {
+    $("cmpHint").textContent = "Request failed: " + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = "Run latency comparison";
+  }
+}
+
 function init() {
   seg("mode", (v) => { state.mode = v; });
   seg("length", (v) => { state.length = v; persistConfig(); });
@@ -345,6 +384,7 @@ function init() {
     state.compareNext = !state.compareNext;
     $("compareBtn").classList.toggle("active", state.compareNext);
   });
+  $("s2sCompareBtn").addEventListener("click", runS2SCompare);
   $("toolsEnabled").addEventListener("change", (e) => { $("toolsBox").hidden = !e.target.checked; });
   $("toolAll").addEventListener("click", (e) => { e.preventDefault(); document.querySelectorAll("#toolList input").forEach((c) => c.checked = true); });
   $("toolNone").addEventListener("click", (e) => { e.preventDefault(); document.querySelectorAll("#toolList input").forEach((c) => c.checked = false); });

@@ -48,6 +48,7 @@
       tts: c.tts || "elevenlabs", voice: c.voice || "Sarah",
       endpoint: c.endpoint || 700, buffer: c.buffer != null ? c.buffer : 120,
       barge: c.barge || "medium",
+      pipeline: c.pipeline || "cascade",
     };
   }
   function chatBody(message, mode) {
@@ -99,7 +100,10 @@
     "#nb-mic.on{background:#6e8bff;color:#fff;border-color:#6e8bff}" +
     "#nb-mic.spk{background:#d29922;color:#fff;border-color:#d29922}" +
     "#nb-in{flex:1;border:1px solid #d8dce6;border-radius:10px;padding:9px 11px;font:inherit;font-size:14px;min-width:0}" +
-    "#nb-send{border:none;background:#6e8bff;color:#fff;border-radius:10px;padding:0 13px;cursor:pointer;font-weight:600}";
+    "#nb-send{border:none;background:#6e8bff;color:#fff;border-radius:10px;padding:0 13px;cursor:pointer;font-weight:600}" +
+    "#nb-modelbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid #eef0f4;background:#fbfcfe;font-size:12px;color:#5b6475}" +
+    "#nb-modelbar span{font-weight:600;color:#6b7488}" +
+    "#nb-modelbar select{flex:1;border:1px solid #d8dce6;border-radius:8px;padding:5px 8px;font:inherit;font-size:12px;color:#1a1f2b;background:#fff;cursor:pointer}";
   var st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
 
   var fab = document.createElement("button");
@@ -109,6 +113,7 @@
   panel.innerHTML =
     '<div id="nb-head"><div>Talk to Nimbus<small>Text or voice · full tools</small></div>' +
     '<div class="hbtns"><button id="nb-gear" title="Agent settings">&#9881;</button><button id="nb-x" aria-label="Close">&times;</button></div></div>' +
+    '<div id="nb-modelbar"><span>Mode</span><select id="nb-pipeline"><option value="cascade">Cascade (ASR&#8594;LLM&#8594;TTS)</option><option value="s2s">Speech-to-speech</option></select><span>Model</span><select id="nb-model"><option>loading...</option></select></div>' +
     '<div id="nb-settings"></div>' +
     '<div id="nb-msgs"><div class="nb-m nb-sys">Ask by typing, or tap the mic to talk. Try "add Nimbus CRM Pro to my cart".</div></div>' +
     '<div id="nb-status"></div>' +
@@ -237,6 +242,40 @@
   gearBtn.addEventListener("click", function () {
     if (settingsEl.classList.contains("open")) { settingsEl.classList.remove("open"); return; }
     buildSettings(); settingsEl.classList.add("open");
+  });
+
+  // ---- visible model quick-switch (no need to open settings) ----
+  var modelSel = panel.querySelector("#nb-model");
+  function loadModelBar() {
+    fetch(getBase() + "/models", { headers: authHeaders(false) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var cur = cfg().model_key;
+        modelSel.innerHTML = (d.models || []).map(function (m) {
+          return '<option value="' + m.key + '"' + (m.key === cur ? " selected" : "") + '>' + m.label + (m.available ? "" : " (no key)") + '</option>';
+        }).join("");
+      })
+      .catch(function () { modelSel.innerHTML = '<option value="' + cfg().model_key + '">' + cfg().model_key + '</option>'; });
+  }
+  modelSel.addEventListener("change", function () {
+    var prev = {}; try { prev = JSON.parse(localStorage.getItem(CFG_KEY) || "{}"); } catch (e) {}
+    prev.model_key = modelSel.value;
+    localStorage.setItem(CFG_KEY, JSON.stringify(prev));
+    add("sys", "Model set to " + modelSel.options[modelSel.selectedIndex].text + ".");
+  });
+  loadModelBar();
+
+  // ---- pipeline quick-switch (Cascade vs Speech-to-speech) ----
+  var pipeSel = panel.querySelector("#nb-pipeline");
+  pipeSel.value = cfg().pipeline;
+  pipeSel.addEventListener("change", function () {
+    if (V.on) stopVoice(); if (V.s2sOn) stopS2S();
+    var prev = {}; try { prev = JSON.parse(localStorage.getItem(CFG_KEY) || "{}"); } catch (e) {}
+    prev.pipeline = pipeSel.value;
+    localStorage.setItem(CFG_KEY, JSON.stringify(prev));
+    add("sys", pipeSel.value === "s2s"
+      ? "Speech-to-speech mode. Tap the mic and just talk (one model, lower latency)."
+      : "Cascade mode (ASR then LLM then TTS).");
   });
 
   // ---- cart bridge ----
@@ -393,5 +432,35 @@
     await calibrate(); status("listening..."); requestAnimationFrame(loop);
   }
   function stopVoice() { V.on = false; stopAudio(); if (V.rec && V.rec.state !== "inactive") try { V.rec.stop(); } catch (e) {} V.phase = "idle"; setMic("", ""); }
-  micBtn.addEventListener("click", function () { V.on ? stopVoice() : startVoice(); });
+
+  // ============ SPEECH-TO-SPEECH (Gemini Live via /live) ============
+  var s2sEngine = null;
+  function startS2S() {
+    if (!window.NimbusS2S) { status("speech-to-speech engine not loaded"); return; }
+    var c = cfg();
+    V.s2sOn = true; setMic("on", "connecting...");
+    s2sEngine = window.NimbusS2S(getBase, loadKeys);
+    s2sEngine.start(
+      { session_id: session, knowledge: c.knowledge, tools_enabled: c.tools_enabled,
+        enabled_tools: c.enabled_tools, response_length: c.response_length, model_key: c.model_key },
+      {
+        onStatus: function (t) {
+          if (!V.s2sOn) return;
+          if (t === "listening") setMic("on", "listening... (just talk)");
+          else if (t === "idle" || t === "disconnected") setMic("", t === "disconnected" ? "disconnected" : "");
+          else setMic("spk", t);
+        },
+        onTurn: function (u, a) { if (u) add("u", u); if (a) add("a", a); },
+        onTool: function (names) { add("tools", "ran: " + names.join(", ")); syncCart(); },
+        onLatency: function () {},
+        onError: function (e) { status("speech-to-speech: " + e); },
+      }
+    );
+  }
+  function stopS2S() { V.s2sOn = false; if (s2sEngine) { s2sEngine.stop(); s2sEngine = null; } setMic("", ""); }
+
+  micBtn.addEventListener("click", function () {
+    if (cfg().pipeline === "s2s") { V.s2sOn ? stopS2S() : startS2S(); return; }
+    V.on ? stopVoice() : startVoice();
+  });
 })();
