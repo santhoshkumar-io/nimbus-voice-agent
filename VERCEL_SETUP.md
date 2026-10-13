@@ -1,0 +1,142 @@
+# Deploying the frontend to Vercel
+
+Every command here was run against this machine and this account before being
+written down. Verified 2026-10-13.
+
+## Before you start: two gotchas that cost real time
+
+### 1. `vercel login` fails on this machine — use a token
+
+Interactive login dies with a bare `Error: fetch failed`, and `vercel projects ls`
+fails with:
+
+```
+Error: self-signed certificate in certificate chain
+    at TLSSocket.onConnectSecure (node:internal/tls/wrap:1653:34)
+```
+
+This machine terminates TLS through an **inspecting proxy**. `curl` trusts it via the
+macOS keychain; Node ships its own CA store and does not. It is not a bad token and
+not a network outage — the same root cause broke Python earlier.
+
+**Fix** — export the keychain to a PEM and point Node at it:
+
+```bash
+./make-ca-bundle.sh
+export NODE_EXTRA_CA_CERTS="$PWD/certs/macos-ca.pem"
+```
+
+Verify:
+
+```bash
+vercel whoami --token "$VERCEL_TOKEN"     # -> santhoshkumars1903-7719
+```
+
+Add the export to your shell profile so it survives new terminals.
+
+### 2. The playground reaches the site through a symlink
+
+`nimbus-voice-agent-starter/playground -> ../playground`. Vercel does **not** follow
+it, so deploying that directory publishes the marketing site with **no playground at
+all** — and it fails silently, looking like a successful deploy. Always build first:
+
+```bash
+./build-frontend.sh      # copies with -L into dist/, then asserts the result
+```
+
+The script fails loudly if `dist/playground` is still a link or if any entry point
+(including the recovered `s2s.js`) is missing.
+
+## Your token
+
+Already present in the gitignored `.env` as `VERCEL_TOKEN`. It was originally spelled
+`VERECEL_TOKEN`, which no tooling reads — the same class of bug as `ELEVEN_LABS`. If
+you need a new one: https://vercel.com/account/tokens
+
+```bash
+export VERCEL_TOKEN=$(grep '^VERCEL_TOKEN=' .env | cut -d= -f2- | tr -d '"'"'"')
+```
+
+## Deploy
+
+```bash
+cd /Users/santhosh.kumar/Documents/Voice-agent/nimbus-voice-agent
+
+export NODE_EXTRA_CA_CERTS="$PWD/certs/macos-ca.pem"
+export VERCEL_TOKEN=$(grep '^VERCEL_TOKEN=' .env | cut -d= -f2- | tr -d '"'"'"')
+
+./build-frontend.sh
+
+vercel deploy --prod --yes \
+  --project nimbus-voice-agent \
+  --cwd dist \
+  --token "$VERCEL_TOKEN"
+```
+
+`--project nimbus-voice-agent` matters: without it the project is named after the
+directory you deploy from, i.e. **`dist`**. Drop `--prod` for a preview URL instead of
+a production one.
+
+## Verify
+
+```bash
+U=https://<deployment-url>
+
+for p in / /playground/playground.html /playground/voice.html /playground/rag.html \
+         /assets/widget.js /assets/s2s.js /playground/s2s.js /data/catalog.json; do
+  printf '%-32s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "$U$p")"
+done
+```
+
+All should be `200`. A `404` on `/playground/...` means the symlink was not
+dereferenced — rebuild with `./build-frontend.sh`.
+
+Then confirm it is talking to the right backend:
+
+```bash
+curl -s $U/playground/runtime-config.js | grep railway
+# -> https://nimbus-voice-agent-production.up.railway.app
+```
+
+Finally open the site and send one message in the "Talk to Nimbus" box.
+
+## Which backend it talks to
+
+`playground/runtime-config.js` auto-detects:
+
+| Served from | Backend |
+|---|---|
+| localhost / 127.0.0.1 | `http://127.0.0.1:8100` |
+| anything else | `https://nimbus-voice-agent-production.up.railway.app` |
+
+That is **our own** Railway backend (see `RAILWAY_SETUP.md`), not the original
+`nimbus-api-production-0295`, which we have no access to and whose `GEMINI_API_KEY` is
+invalid. If the backend domain changes, edit that one file and redeploy — the URL is
+deliberately not duplicated anywhere else any more.
+
+The backend sets `allow_origins=["*"]`, so a new Vercel domain needs no CORS change.
+
+## What will and will not work once deployed
+
+Works: text chat on all 4 models (Gemini included — our backend uses the live
+`gemini-3.5-flash`), all 11 cart/pricing tools, RAG with reranking, the vector
+visualization, RAGless, streaming and batch, all 3 TTS and all 3 server ASR providers,
+browser ASR, and the latency panels.
+
+Does not work, because it needs the **lost** backend source:
+
+- the voice page / widget **"Speech-to-speech"** pipeline option (needs `WS /live`)
+- **Deepgram** ASR and **Cartesia** TTS (no keys, and no server support in this tree)
+- the **"Flash TTS"** latency-lab toggle — it sends `fast: true`, but this backend's
+  `TTSBody` has no `fast` field, so the value is silently dropped
+
+The pipeline selector defaults to `cascade`, so s2s is opt-in and nothing breaks by
+default. See `PROD_RECOVERY.md`.
+
+## Note on third-party embeds
+
+`index.html` also embeds a **Vapi** widget and a **LiveKit** popup alongside the custom
+agent. Their identifiers are client-side public by design, but anyone loading your page
+can exercise those assistants against your accounts — so set origin allowlists and
+spend limits in the Vapi and LiveKit dashboards. LiveKit additionally needs the new
+Vercel domain allowlisted or its launcher will not appear.

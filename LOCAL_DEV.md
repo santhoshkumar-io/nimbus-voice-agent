@@ -24,25 +24,26 @@ so **every** outbound provider call fails with:
 [SSL: CERTIFICATE_VERIFY_FAILED] self-signed certificate in certificate chain
 ```
 
-This is easy to misdiagnose as a bad API key, and it silently breaks the
-boot-time RAG index build (the warm task swallows exceptions). Build a bundle
-from the keychain once:
+The same proxy also breaks the Vercel CLI (`Error: self-signed certificate in
+certificate chain`), so one bundle serves both. This is easy to misdiagnose as a
+bad API key, and it silently breaks the boot-time RAG index build (the warm task
+swallows exceptions).
+
+Build the bundle once from the repo root:
 
 ```bash
-cd backend
-mkdir -p .venv/certs
-security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain  > .venv/certs/macos-ca.pem
-security find-certificate -a -p /Library/Keychains/System.keychain                        >> .venv/certs/macos-ca.pem
-security find-certificate -a -p ~/Library/Keychains/login.keychain-db                      >> .venv/certs/macos-ca.pem
+./make-ca-bundle.sh          # writes certs/macos-ca.pem (gitignored)
 ```
 
-Then always export it when running the backend (both vars — different libraries
-read different ones):
+Then export it — different runtimes read different variables:
 
 ```bash
-export SSL_CERT_FILE="$PWD/.venv/certs/macos-ca.pem"
-export REQUESTS_CA_BUNDLE="$SSL_CERT_FILE"
+export SSL_CERT_FILE="$PWD/certs/macos-ca.pem"        # Python / httpx
+export REQUESTS_CA_BUNDLE="$PWD/certs/macos-ca.pem"   # requests
+export NODE_EXTRA_CA_CERTS="$PWD/certs/macos-ca.pem"  # Node / Vercel CLI
 ```
+
+Add them to your shell profile so new terminals inherit them.
 
 ## Run it
 
@@ -50,8 +51,8 @@ Terminal 1 — backend on :8100:
 
 ```bash
 cd backend
-SSL_CERT_FILE="$PWD/.venv/certs/macos-ca.pem" \
-REQUESTS_CA_BUNDLE="$PWD/.venv/certs/macos-ca.pem" \
+SSL_CERT_FILE="$PWD/../certs/macos-ca.pem" \
+REQUESTS_CA_BUNDLE="$PWD/../certs/macos-ca.pem" \
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100
 ```
 
