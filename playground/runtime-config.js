@@ -10,5 +10,5 @@
   var isLocal = h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "";
   window.NIMBUS_API_BASE = isLocal
     ? "http://127.0.0.1:8100"
-    : "https://nimbus-api-production-0295.up.railway.app";
+    : "https://nimbus-voice-agent-production.up.railway.app";
 })();
