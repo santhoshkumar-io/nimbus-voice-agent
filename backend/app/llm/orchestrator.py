@@ -103,9 +103,7 @@ async def _ensure_summary(req: ChatRequest, session: H.Session, older, lat: Late
 
 
 def _assemble(req: ChatRequest, session: H.Session, retrieved_context: str | None):
-    max_tokens, guidance = registry.LENGTH_PRESETS.get(
-        req.response_length, registry.LENGTH_PRESETS["medium"]
-    )
+    max_tokens, guidance = registry.resolve_length(req.response_length)
     older, recent = H.split_for_context(session, req.verbatim_turns)
     system_text = prompts.build_system_prompt(
         user_system_prompt=req.system_prompt,

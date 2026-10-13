@@ -33,7 +33,7 @@ _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 PROVIDERS = ("openai", "gemini", "elevenlabs")
 _OPENAI_MODEL = "gpt-4o-transcribe"
-_GEMINI_MODEL = "gemini-2.5-flash"
+_GEMINI_MODEL = "gemini-3.5-flash"  # 2.5-flash retired 2026-10 (404)
 _ELEVEN_MODEL = "scribe_v1"
 
 DEFAULT_LANGUAGE = "en"

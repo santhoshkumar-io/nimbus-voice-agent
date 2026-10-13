@@ -137,7 +137,7 @@
       '<div class="sec"><h5>Model &amp; generation</h5>' +
         '<label>Model<select id="s-model"></select></label>' +
         '<label>Response length<select id="s-len">' +
-          opt(["short", "medium", "long"], c.response_length, { short: "Short", medium: "Medium", long: "Long" }) + '</select></label>' +
+          opt(["low", "medium", "high"], c.response_length, { low: "Short", medium: "Medium", high: "Long" }) + '</select></label>' +
         '<label>Temperature <span id="s-tempv" class="hintv"></span>' +
           '<input type="range" id="s-temp" min="0" max="1" step="0.05" value="' + c.temperature + '"></label>' +
         '<label>System prompt (optional)<textarea id="s-sys" placeholder="Override the agent persona / instructions...">' + esc(c.system_prompt || "") + '</textarea></label>' +

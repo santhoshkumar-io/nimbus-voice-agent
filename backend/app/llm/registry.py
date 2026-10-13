@@ -21,8 +21,13 @@ class ModelSpec:
 MODELS: tuple[ModelSpec, ...] = (
     ModelSpec("openai-lite", "openai", "gpt-4o-mini", "OpenAI - lite (gpt-4o-mini)"),
     ModelSpec("openai-heavy", "openai", "gpt-4o", "OpenAI - heavyweight (gpt-4o)"),
-    ModelSpec("gemini-flash", "gemini", "gemini-2.5-flash", "Gemini - flash (2.5)"),
-    ModelSpec("gemini-pro", "gemini", "gemini-2.5-pro", "Gemini - pro (2.5)"),
+    # 2026-10: gemini-2.5-flash / -pro were retired ("no longer available to new
+    # users", HTTP 404). gemini-3.8-flash is Google's named successor but was
+    # returning 503 "high demand" on 4/4 probes, while 3.5-flash passed 4/4 --
+    # so flash is pinned to 3.5. Pinned, not "-latest": a floating alias is what
+    # broke silently in the first place.
+    ModelSpec("gemini-flash", "gemini", "gemini-3.5-flash", "Gemini - flash (3.5)"),
+    ModelSpec("gemini-pro", "gemini", "gemini-3.1-pro-preview", "Gemini - pro (3.1 preview)"),
 )
 
 _BY_KEY = {m.key: m for m in MODELS}
@@ -36,6 +41,18 @@ LENGTH_PRESETS = {
     "medium": (400, "Answer concisely in a short paragraph."),
     "high": (1000, "Answer thoroughly, with detail and structure where useful."),
 }
+
+
+# The widget historically shipped short|long in its settings UI, which silently
+# fell back to "medium" because only low|medium|high exist. Accept the aliases so
+# configs already persisted in users' localStorage resolve to what they meant.
+_LENGTH_ALIASES = {"short": "low", "long": "high"}
+
+
+def resolve_length(name: str | None) -> tuple[int, str]:
+    """Map a requested response length (incl. legacy aliases) to its preset."""
+    key = _LENGTH_ALIASES.get((name or "").lower(), (name or "").lower())
+    return LENGTH_PRESETS.get(key, LENGTH_PRESETS["medium"])
 
 
 def get_model(key: str) -> ModelSpec:

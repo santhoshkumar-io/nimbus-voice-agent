@@ -19,8 +19,10 @@
     import { renderHome } from "./assets/render.js";
     bootstrap("", renderHome);
   </script>
-  <!-- Talk to Nimbus: the finalized agent. Swap the URL when the backend moves. -->
-  <script>window.NIMBUS_API_BASE = "https://nimbus-api-production-0295.up.railway.app";</script>
+  <!-- Talk to Nimbus: the finalized agent. Backend URL comes from the shared
+       runtime-config (auto-detects localhost vs deployed) -- do not hardcode it
+       here as well, it only drifts out of sync. -->
+  <script src="playground/runtime-config.js"></script>
   <!-- Seed a working default stack for local testing (Gemini + full context + ElevenLabs),
        so the chat box works out of the box. Only applied if the user hasn't saved settings yet. -->
   <script>
