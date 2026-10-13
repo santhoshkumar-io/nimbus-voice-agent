@@ -79,21 +79,21 @@ Force a rebuild with `curl -X POST localhost:8100/rag/build -d '{"clusters":8}' 
 
 ## What works locally, and what does not
 
-Keys present in the workspace `.env`: **OpenAI ✓, Gemini ✓, ElevenLabs ✗**.
+Keys in `nimbus-voice-agent/.env`: **OpenAI ✓, Gemini ✓, ElevenLabs ✓**.
 
 Works: text chat on all 4 models, all 11 tools, RAG + reranking + the vector
-visualization, RAGless, streaming and batch, OpenAI and Gemini TTS, OpenAI and
-Gemini ASR, browser ASR, the latency panels.
+visualization, RAGless, streaming and batch, **all three TTS providers**, **all
+three server ASR providers**, browser ASR, the latency panels.
 
-Does **not** work locally:
+> The key must be named `ELEVENLABS_API_KEY`. It was originally `ELEVEN_LABS`,
+> which no code reads, so it looked identical to "no key at all". `config.py` now
+> also accepts aliases (`ELEVEN_LABS`, `ELEVENLABS_KEY`, …) via `config.key_for()`,
+> which ASR, TTS and the embedder all route through — so a misnamed var still
+> works instead of silently disabling a provider.
 
-- **ElevenLabs ASR/TTS** — `.env` has `ELEVEN_LABS=` (empty) while all code reads
-  `ELEVENLABS_API_KEY`. Both the name and the value need fixing. ElevenLabs is the
-  seeded default for ASR *and* TTS, so on the voice page and in the widget
-  settings **switch ASR and TTS to OpenAI or Gemini** or those turns fail with 400.
-- **The phone agent, `WS /live` speech-to-speech, Deepgram and Cartesia** — these
-  exist only in the deployed backend, whose source is missing. See
-  `PROD_RECOVERY.md`.
+Does **not** work locally: **the phone agent, `WS /live` speech-to-speech, Deepgram
+and Cartesia** — these exist only in the deployed backend, whose source is missing.
+See `PROD_RECOVERY.md`.
 
 ## Measured locally (2026-10-13)
 
@@ -104,7 +104,16 @@ Does **not** work locally:
 | FAISS search | 0.3–5 ms |
 | Query embedding (OpenAI, remote) | 320–660 ms ← *all* of the RAG latency |
 | `/chat` gemini-flash | ~1.8–2.4 s |
-| TTS openai / gemini | ~2.3 s / ~2.4 s |
+| TTS elevenlabs / openai / gemini | 2.20 s / 2.40 s / 3.42 s |
+| ASR openai / elevenlabs / gemini | 1.08 s / 1.47 s / 1.73 s |
+
+Gemini ASR was pinned to **`gemini-3.5-flash-lite`**, not `-flash`: transcription
+needs no reasoning, and flash spent 4.1 s (once 17 s cold) on a clip flash-lite
+handled in 1.7 s with an identical transcript.
+
+Accuracy note from a TTS→ASR round trip of *"Hello, this is Nimbus speaking."* —
+only **ElevenLabs** got the brand name right; OpenAI heard "Nimbe" and Gemini
+"Nimba". If product names matter in the demo, prefer ElevenLabs ASR.
 
 **The interesting result:** RAG cuts the prompt by 97% but is *not* faster
 end-to-end (~2.0–2.7 s vs ~2.3–2.4 s ragless), because one remote query embedding

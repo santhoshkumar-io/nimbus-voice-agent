@@ -11,7 +11,7 @@ import time
 
 import httpx
 
-from app import audio
+from app import audio, config
 
 _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
@@ -34,8 +34,8 @@ _ELEVEN_VOICE_IDS = {
 
 
 def _key(provider: str, override: str | None) -> str:
-    env = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY"}[provider]
-    key = override or os.getenv(env)
+    # config.key_for honours the canonical env var plus known aliases.
+    key = override or config.key_for(provider)
     if not key:
         raise RuntimeError(f"Missing {provider} API key for TTS.")
     return key

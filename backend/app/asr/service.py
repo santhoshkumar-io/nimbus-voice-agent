@@ -17,7 +17,7 @@ import time
 
 import httpx
 
-from app import audio
+from app import audio, config
 
 # Non-speech event tags providers may still emit: "(footsteps)", "[laughter]", "*sighs*".
 _NONSPEECH_RE = re.compile(r"[\(\[\{\*][^\)\]\}\*]*[\)\]\}\*]")
@@ -33,7 +33,11 @@ _TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
 PROVIDERS = ("openai", "gemini", "elevenlabs")
 _OPENAI_MODEL = "gpt-4o-transcribe"
-_GEMINI_MODEL = "gemini-3.5-flash"  # 2.5-flash retired 2026-10 (404)
+# 2.5-flash was retired 2026-10 (404). flash-lite is used rather than flash
+# because transcription needs no reasoning: measured 1.7s vs 4.1s on the same
+# clip for an identical transcript. (flash-lite rejects thinkingConfig, and
+# setting thinkingBudget=0 on flash did not help.)
+_GEMINI_MODEL = "gemini-3.5-flash-lite"
 _ELEVEN_MODEL = "scribe_v1"
 
 DEFAULT_LANGUAGE = "en"
@@ -58,8 +62,8 @@ def _norm_lang(language: str | None) -> str | None:
 
 
 def _key(provider: str, override: str | None) -> str:
-    env = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY"}[provider]
-    key = override or os.getenv(env)
+    # config.key_for honours the canonical env var plus known aliases.
+    key = override or config.key_for(provider)
     if not key:
         raise RuntimeError(f"Missing {provider} API key for ASR.")
     return key

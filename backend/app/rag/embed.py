@@ -37,7 +37,7 @@ def _normalize(arr: np.ndarray) -> np.ndarray:
 
 
 def _openai_key(override: str | None) -> str:
-    key = override or os.getenv("OPENAI_API_KEY")
+    key = override or config.key_for("openai")
     if not key:
         raise RuntimeError("OpenAI key required for the 'light' embedding profile.")
     return key

@@ -41,10 +41,32 @@ KEY_REGISTRY = {
     "elevenlabs": "ELEVENLABS_API_KEY",
 }
 
+# Accepted misspellings/short forms, checked only if the canonical name is unset.
+# A key set under the wrong name used to look identical to "no key at all", which
+# silently disabled the default ASR *and* TTS provider with no diagnostic.
+KEY_ALIASES = {
+    "elevenlabs": ("ELEVEN_LABS", "ELEVENLABS_KEY", "ELEVEN_LABS_API_KEY"),
+    "openai": ("OPENAI_KEY",),
+    "gemini": ("GOOGLE_API_KEY", "GEMINI_KEY"),
+}
+
+
+def key_for(name: str) -> str | None:
+    """The key value for a provider: canonical env var first, then any alias."""
+    env = KEY_REGISTRY.get(name)
+    if env:
+        val = os.getenv(env)
+        if val:
+            return val
+    for alt in KEY_ALIASES.get(name, ()):
+        val = os.getenv(alt)
+        if val:
+            return val
+    return None
+
 
 def key_present(name: str) -> bool:
-    env = KEY_REGISTRY.get(name)
-    return bool(env and os.getenv(env))
+    return bool(key_for(name))
 
 
 def available_keys() -> dict[str, bool]:
